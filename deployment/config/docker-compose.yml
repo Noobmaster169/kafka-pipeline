@@ -1,0 +1,83 @@
+# AWAS A3 — full local stack (Zookeeper, Kafka, MongoDB, Spark) on one network.
+#
+# Brings up the three unit-provided infrastructure images plus the Spark worker, all on
+# `kafka-net`, so a single command controls the whole setup. Spark gets the A3 code
+# bind-mounted at /app (host edits are live, no copy/paste) and the ivy cache persisted
+# so the spark-sql-kafka connector jar downloads only once.
+#
+#   docker compose -f deployment/config/docker-compose.yml up -d --build   # start all
+#   docker compose -f deployment/config/docker-compose.yml down            # stop + remove all
+#
+# Or use the wrapper that resolves paths for you: deployment/scripts/stack.sh up | down.
+#
+# Note on host access: Kafka advertises itself as `kafka`, which resolves inside the
+# compose network. To run a Python service from the *host* against this stack, either
+# run it as a container on `kafka-net`, or use the mapped ports with MONGO_HOST=localhost
+# / KAFKA_BOOTSTRAP_SERVERS=localhost:9092.
+
+name: awas-a3
+
+services:
+  zookeeper:
+    image: fit3182/zookeeper
+    container_name: zookeeper
+    ports:
+      - "2181:2181"
+    networks:
+      - kafka-net
+
+  kafka:
+    image: fit3182/kafka
+    container_name: kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_HOST_NAME: kafka
+      KAFKA_ADVERTISED_PORT: "9092"
+    networks:
+      - kafka-net
+
+  mongo:
+    image: fit3182/mongo
+    container_name: mongo
+    ports:
+      - "27017:27017"
+    networks:
+      - kafka-net
+
+  spark:
+    # Baked image = fit3182/pyspark + A3 Python deps (see deployment/Dockerfile), so the
+    # container is ready with no in-container pip install. Build context is the module root.
+    build:
+      context: ../..
+      dockerfile: deployment/Dockerfile
+    image: awas/pyspark
+    container_name: spark
+    depends_on:
+      - kafka
+      - mongo
+    ports:
+      - "8888:8888"
+      - "4040:4040"
+    environment:
+      MONGO_HOST: mongo
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      # Keep the Spark checkpoint OFF the Windows-backed /app bind mount — Hadoop chmods its
+      # checkpoint files and NTFS-via-WSL rejects chmod. /tmp is a real Linux fs in the container.
+      CHECKPOINT_DIR: /tmp/awas/checkpoints
+    volumes:
+      - ../..:/app                       # A3 code, live-mounted at /app (code at /app/src)
+      - ../../deployment/.cache/ivy2:/root/.ivy2   # persist the connector-jar download
+    networks:
+      - kafka-net
+    command: jupyter notebook
+
+networks:
+  # External = Compose uses the pre-existing `kafka-net` (created by stack.sh / by hand /
+  # shared with the A2 setup) instead of trying to own it. stack.sh ensures it exists.
+  kafka-net:
+    name: kafka-net
+    external: true

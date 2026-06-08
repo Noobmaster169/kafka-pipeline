@@ -1,0 +1,9 @@
+# AWAS A3 — Python dependencies (backend, simulator, pipeline, seeding).
+# The React frontend has its own package.json under src/frontend.
+
+pandas>=2.0
+pymongo>=4.6
+kafka-python>=2.0
+pyspark==3.3.0
+fastapi>=0.110
+uvicorn[standard]>=0.29
