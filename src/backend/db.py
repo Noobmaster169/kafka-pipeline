@@ -138,6 +138,26 @@ def append_camera(lane_id: int, speed_limit: float | None = None) -> dict:
     db[config.COLL_CAMERAS].insert_one(camera)
     return jsonify(camera)
 
+def remove_last_camera(lane_id: int) -> dict | None:
+    """
+    Remove the camera at the end of a lane (the inverse of append_camera).
+
+    Deletes the lane's highest-position camera and returns it or None if the
+    lane does not exist. Raises ValueError if the removal would leave fewer
+    than two cameras, since average-speed detection needs a camera pair.
+    """
+    db = get_db()
+    if db[config.COLL_LANES].find_one({"lane_id": lane_id}) is None:
+        return None
+
+    if db[config.COLL_CAMERAS].count_documents({"lane_id": lane_id}) <= 2:
+        raise ValueError(f"lane {lane_id} needs at least 2 cameras for average-speed detection")
+
+    camera = db[config.COLL_CAMERAS].find_one_and_delete(
+        {"lane_id": lane_id},
+        sort=[("position_km", DESCENDING)],
+    )
+    return jsonify(camera) if camera else None
 
 # --------------------------------------------------------------------------- #
 # Cars

@@ -20,12 +20,22 @@ export default function LaneDashboard() {
   // on its own animation tick (decoupling socket cadence from rendering).
   const eventQueueRef = useRef([]);
 
-  useEffect(() => {
-    setLane(null);
-    setError(null);
-    eventQueueRef.current = [];
-    api.getLane(id).then(setLane).catch(setError);
-  }, [id]);
+useEffect(() => {
+  setLane(null);                 // reset only when switching lanes
+  setError(null);
+  eventQueueRef.current = [];
+
+  let alive = true;
+  const loadData = () => {
+    api.getLane(id)
+      .then((data) => { if (alive) setLane(data); })
+      .catch((e) => { if (alive) setLane((cur) => { if (!cur) setError(e); return cur; }); });
+  };
+
+  loadData();
+  const interval = setInterval(loadData, 5000);
+  return () => { alive = false; clearInterval(interval); };
+}, [id]);
 
   const onCameraEvent = useCallback((ev) => {
     eventQueueRef.current.push(ev);

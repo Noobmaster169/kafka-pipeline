@@ -7,15 +7,25 @@ import { Panel, StatCard, ConnectionDot, Spinner, ErrorState } from "../componen
 import LiveViolationFeed from "../components/LiveViolationFeed.jsx";
 import { IconArrowRight } from "../components/icons.jsx";
 import "./pages.css";
+import LatestCapture from "../components/LatestCapture.jsx";
 
 export default function Overview() {
   const [lanes, setLanes] = useState(null);
   const [error, setError] = useState(null);
   const { feed, status } = useViolationFeed();
 
-  useEffect(() => {
-    api.listLanes().then(setLanes).catch(setError);
-  }, []);
+useEffect(() => {
+  let alive = true;
+  const loadData = () => {
+    api.listLanes()
+      .then((data) => { if (alive) setLanes(data); })
+      .catch((e) => { if (alive) setLanes((cur) => { if (!cur) setError(e); return cur; }); });
+  };
+
+  loadData();
+  const interval = setInterval(loadData, 5000);
+  return () => { alive = false; clearInterval(interval); };
+}, []);
 
   if (error) return <ErrorState error={error} />;
   if (!lanes) return <Spinner label="Loading network" />;
@@ -53,37 +63,41 @@ export default function Overview() {
         <StatCard label="Cameras Online" value={totals.cameras} tone="live" sub={`${lanes.length} lanes`} />
       </div>
 
-      <div className="grid-2">
-        <Panel title="Monitored Lanes" bodyClass="">
-          <div className="lane-cards">
-            {lanes.map((lane) => {
-              const { total, instantaneous, average } = lane.violations;
-              const denom = total || 1;
-              return (
-                <Link key={lane.lane_id} to={`/lanes/${lane.lane_id}`} className="lane-card">
-                  <div className="lane-card-head">
-                    <div>
-                      <div className="lane-card-name">{lane.name}</div>
-                      <div className="lane-card-meta mono">
-                        LANE {lane.lane_id} · {lane.camera_count} cameras
+<div className="grid-2">
+        <div>
+          <Panel title="Monitored Lanes" bodyClass="">
+            <div className="lane-cards">
+              {lanes.map((lane) => {
+                const { total, instantaneous, average } = lane.violations;
+                const denom = total || 1;
+                return (
+                  <Link key={lane.lane_id} to={`/lanes/${lane.lane_id}`} className="lane-card">
+                    <div className="lane-card-head">
+                      <div>
+                        <div className="lane-card-name">{lane.name}</div>
+                        <div className="lane-card-meta mono">
+                          LANE {lane.lane_id} · {lane.camera_count} cameras
+                        </div>
                       </div>
+                      <IconArrowRight style={{ color: "var(--text-2)" }} />
                     </div>
-                    <IconArrowRight style={{ color: "var(--text-2)" }} />
-                  </div>
-                  <div className="lane-card-total">{total}</div>
-                  <div className="split-bar">
-                    <i className="seg-instant" style={{ width: `${(instantaneous / denom) * 100}%` }} />
-                    <i className="seg-average" style={{ width: `${(average / denom) * 100}%` }} />
-                  </div>
-                  <div className="split-legend">
-                    <span className="legend-instant">{instantaneous} instant</span>
-                    <span className="legend-average">{average} average</span>
-                  </div>
-                </Link>
-              );
-            })}
-          </div>
-        </Panel>
+                    <div className="lane-card-total">{total}</div>
+                    <div className="split-bar">
+                      <i className="seg-instant" style={{ width: `${(instantaneous / denom) * 100}%` }} />
+                      <i className="seg-average" style={{ width: `${(average / denom) * 100}%` }} />
+                    </div>
+                    <div className="split-legend">
+                      <span className="legend-instant">{instantaneous} instant</span>
+                      <span className="legend-average">{average} average</span>
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+          </Panel>
+
+          <LatestCapture violation={feed[0]} />
+        </div>
 
         <Panel
           title="Live Violation Feed"
