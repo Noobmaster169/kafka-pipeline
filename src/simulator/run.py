@@ -12,7 +12,7 @@ Run from src/:
     python -m simulator.run --normal 0.5 --speeder 0.3 --sneaky 0.2
     python -m simulator.run --fast --total 100000    # load-test: blast as fast as possible
     python -m simulator.run --source csv --scale 5   # replay data/camera_event_*.csv
-    python -m simulator.run -v                        # DEBUG: log every trip, not just violations
+    python -m simulator.run -v                        # DEBUG: add camera-refresh / internal detail
 """
 
 from __future__ import annotations
@@ -136,15 +136,13 @@ def show_banner(args, plates, cams_by_lane, ratios) -> None:
 
 
 def _log_trip(stats: Stats, behavior: str, plate: str, lane_id: int, summary: dict) -> None:
-    """Log violation trips at INFO (the interesting ones); clean trips at DEBUG."""
+    """Log every trip at INFO so each car that enters traffic is visible; the label
+    still marks the violators (INSTANT / AVERAGE / INSTANT+AVG) versus clean cars."""
     label = _label(summary)
     msg = ("trip #%-4d %-7s %-9s lane %d  -> %-11s (spot %.0f, avg %.0f)"
            % (stats.trips, behavior, plate, lane_id, label,
               summary["max_spot"], summary["max_avg"]))
-    if label == "clean":
-        log.debug(msg)
-    else:
-        log.info(msg)
+    log.info(msg)
 
 
 # --------------------------------------------------------------------------- #
@@ -333,7 +331,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--stats-interval", type=float, default=5.0,
                    help="Seconds between periodic throughput summaries.")
     p.add_argument("-v", "--verbose", action="store_true",
-                   help="DEBUG logging: log every trip (not just violations).")
+                   help="DEBUG logging (every trip is already logged at INFO).")
     return p.parse_args()
 
 
