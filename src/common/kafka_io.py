@@ -9,11 +9,18 @@ stream-stream join depends on.
 from __future__ import annotations
 
 import json
+import logging
 
 from common import config
 from common.log import get_logger
 
-log = get_logger("kafka")
+log = get_logger("kafkaio")
+
+# kafka-python's own loggers (kafka.conn, kafka.consumer, ...) are very chatty at
+# INFO — per-connection lifecycle and partition-assignment lines that drown our
+# clean output. Give that hierarchy our handler but only at WARNING+, so genuine
+# broker problems still surface (in our format) while the routine chatter is muted.
+get_logger("kafka").setLevel(logging.WARNING)
 
 # The kafka client is imported lazily inside the factories so non-Kafka services
 # (and tests) can import this module without the client installed.
@@ -29,7 +36,7 @@ def make_producer(bootstrap: str | None = None):
         bootstrap_servers=[servers],
         value_serializer=lambda v: json.dumps(v).encode("utf-8"),
         key_serializer=lambda k: k.encode("utf-8") if k is not None else None,
-        api_version=(0, 10),
+        api_version=(0, 10, 0),
         retries=3,
         linger_ms=20,
         acks="all",
@@ -57,7 +64,7 @@ def make_consumer(
         bootstrap_servers=[servers],
         value_deserializer=lambda v: json.loads(v.decode("utf-8")),
         key_deserializer=lambda k: k.decode("utf-8") if k else None,
-        api_version=(0, 10),
+        api_version=(0, 10, 0),
         group_id=group_id,
         auto_offset_reset=auto_offset_reset,
         **kwargs,

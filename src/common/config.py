@@ -76,3 +76,21 @@ CHECKPOINT_DIR = os.getenv("CHECKPOINT_DIR", "dump/checkpoints/violations")
 # --------------------------------------------------------------------------- #
 # Spacing applied when an admin appends a new camera to the end of a lane.
 CAMERA_SPACING_KM = float(os.getenv("CAMERA_SPACING_KM", "1.0"))
+
+# --------------------------------------------------------------------------- #
+# Backend API (FastAPI) — Phase 4
+# --------------------------------------------------------------------------- #
+# Where uvicorn binds. 0.0.0.0 so the dashboard can reach it whether the API runs
+# on the host or inside a container.
+BACKEND_HOST = os.getenv("BACKEND_HOST", "0.0.0.0")
+BACKEND_PORT = int(os.getenv("BACKEND_PORT", "8000"))
+
+# Browser origins allowed by CORS. The React dashboard is served by the Vite dev
+# server (5173) in development; override with a comma-separated list in production.
+CORS_ORIGINS = [
+    o.strip()
+    for o in os.getenv(
+        "CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173"
+    ).split(",")
+    if o.strip()
+]
