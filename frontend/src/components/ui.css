@@ -1,0 +1,114 @@
+/* Shared presentational components. */
+
+/* ---- StatCard ------------------------------------------------------------ */
+.stat {
+  position: relative;
+  padding: 14px 16px 14px 18px;
+  background: linear-gradient(180deg, var(--bg-1), var(--panel));
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.stat-rail {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--text-2);
+}
+.stat.tone-live .stat-rail {
+  background: var(--live);
+  box-shadow: 0 0 12px var(--live);
+}
+.stat.tone-instant .stat-rail {
+  background: var(--instant);
+  box-shadow: 0 0 12px var(--instant);
+}
+.stat.tone-average .stat-rail {
+  background: var(--average);
+  box-shadow: 0 0 12px var(--average);
+}
+.stat.tone-info .stat-rail {
+  background: var(--info);
+  box-shadow: 0 0 12px var(--info);
+}
+.stat-value {
+  font-size: 30px;
+  font-weight: 700;
+  line-height: 1.1;
+  margin-top: 6px;
+  letter-spacing: -0.01em;
+}
+.stat.tone-live .stat-value {
+  color: var(--live);
+}
+.stat.tone-instant .stat-value {
+  color: var(--instant);
+}
+.stat.tone-average .stat-value {
+  color: var(--average);
+}
+.stat.tone-info .stat-value {
+  color: var(--info);
+}
+.stat-unit {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-2);
+}
+.stat-sub {
+  font-size: 12px;
+  color: var(--text-2);
+  margin-top: 4px;
+}
+
+/* ---- ConnectionDot ------------------------------------------------------- */
+.conn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.conn-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-2);
+}
+.conn-label {
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  color: var(--text-2);
+}
+.conn-live .conn-dot {
+  background: var(--live);
+  animation: pulse-ring 1.6s infinite;
+}
+.conn-live .conn-label {
+  color: var(--live);
+}
+.conn-connecting .conn-dot {
+  background: var(--instant);
+  animation: pulse-ring 1.6s infinite;
+}
+.conn-connecting .conn-label {
+  color: var(--instant);
+}
+.conn-offline .conn-dot {
+  background: var(--text-2);
+}
+
+/* ---- Spinner ------------------------------------------------------------- */
+.spinner {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid var(--line-strong);
+  border-top-color: var(--live);
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

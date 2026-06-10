@@ -1,0 +1,221 @@
+/* Shared page scaffolding. */
+.page {
+  max-width: 1320px;
+  margin: 0 auto;
+  animation: rise 0.5s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+.page-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 22px;
+}
+.page-title {
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.1;
+}
+.page-desc {
+  color: var(--text-1);
+  font-size: 13.5px;
+  margin-top: 4px;
+}
+.page-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+  margin-bottom: 18px;
+}
+.grid-2 {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  gap: 18px;
+  align-items: start;
+}
+.grid-cols {
+  display: grid;
+  gap: 18px;
+}
+
+/* lane cards on the overview */
+.lane-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 14px;
+}
+.lane-card {
+  display: block;
+  position: relative;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, var(--bg-1), var(--panel));
+  transition: border-color 0.16s, transform 0.16s;
+}
+.lane-card:hover {
+  border-color: var(--live);
+  transform: translateY(-2px);
+}
+.lane-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.lane-card-name {
+  font-size: 15px;
+  font-weight: 600;
+}
+.lane-card-meta {
+  font-size: 11px;
+  color: var(--text-2);
+  margin-top: 2px;
+}
+.lane-card-total {
+  font-family: var(--font-mono);
+  font-size: 26px;
+  font-weight: 700;
+  margin: 14px 0 10px;
+}
+/* split bar: instant vs average */
+.split-bar {
+  height: 7px;
+  border-radius: 4px;
+  overflow: hidden;
+  display: flex;
+  background: var(--bg-3);
+}
+.split-bar > i {
+  display: block;
+  height: 100%;
+}
+.split-bar .seg-instant {
+  background: var(--instant);
+}
+.split-bar .seg-average {
+  background: var(--average);
+}
+.split-legend {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 8px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.legend-instant {
+  color: var(--instant);
+}
+.legend-average {
+  color: var(--average);
+}
+
+/* toolbar / filter row */
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+}
+.toolbar .field {
+  min-width: 140px;
+}
+
+/* pagination */
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 4px 0;
+  font-size: 12px;
+  color: var(--text-1);
+}
+.pager-btns {
+  display: flex;
+  gap: 8px;
+}
+
+/* camera chips */
+.cam-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.cam-chip {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--bg-2);
+  min-width: 96px;
+}
+.cam-chip .cam-id {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-1);
+}
+.cam-chip .cam-pos {
+  font-family: var(--font-mono);
+  font-size: 17px;
+  font-weight: 700;
+}
+.cam-chip .cam-limit {
+  font-size: 11px;
+  color: var(--text-2);
+}
+
+.clickable {
+  cursor: pointer;
+}
+.row-selected {
+  background: var(--live-dim) !important;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  align-items: end;
+}
+.form-msg {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  margin-top: 10px;
+}
+.form-msg.ok {
+  color: var(--live);
+}
+.form-msg.err {
+  color: var(--danger);
+}
+
+/* car detail */
+.detail-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+.detail-field .eyebrow {
+  margin-bottom: 0;
+}
+.reg-form .field {
+  margin-bottom: 12px;
+}
+
+@media (max-width: 1000px) {
+  .stat-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .grid-2 {
+    grid-template-columns: 1fr;
+  }
+}

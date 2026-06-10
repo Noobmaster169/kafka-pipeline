@@ -1,0 +1,346 @@
+/* ============================================================================
+   AWAS Enforcement Operations Console — design system
+
+   A "traffic control room" aesthetic: deep ink field under a faint instrument
+   grid, phosphor-teal for live signals, amber/rose alarms for the two violation
+   types. Squared technical display face (Chakra Petch) + monospace readouts
+   (JetBrains Mono). Tokens first, then base, then the shared component classes.
+   ============================================================================ */
+
+:root {
+  /* surfaces — deep field up to elevated panels */
+  --bg-0: #070a0f;
+  --bg-1: #0d121b;
+  --bg-2: #131b27;
+  --bg-3: #1a2433;
+  --panel: #0f1620;
+
+  /* hairlines */
+  --line: rgba(140, 165, 200, 0.12);
+  --line-strong: rgba(140, 165, 200, 0.22);
+
+  /* text ramp */
+  --text-0: #eaf1fb;
+  --text-1: #93a3ba;
+  --text-2: #5b6b80;
+
+  /* signals — cool live vs warm alarms */
+  --live: #2fe3ac; /* connection / active / under-limit */
+  --live-dim: rgba(47, 227, 172, 0.14);
+  --instant: #ffb02e; /* INSTANTANEOUS violations (amber) */
+  --instant-dim: rgba(255, 176, 46, 0.14);
+  --average: #ff5470; /* AVERAGE violations (rose) */
+  --average-dim: rgba(255, 84, 112, 0.14);
+  --danger: #ff5470;
+  --info: #4cc4ff;
+
+  /* type */
+  --font-display: "Chakra Petch", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  /* shape */
+  --radius: 6px;
+  --radius-sm: 4px;
+
+  --shadow-panel: 0 1px 0 rgba(255, 255, 255, 0.03) inset,
+    0 18px 40px -24px rgba(0, 0, 0, 0.8);
+  --glow-live: 0 0 0 1px rgba(47, 227, 172, 0.4), 0 0 18px rgba(47, 227, 172, 0.35);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: var(--font-display);
+  font-weight: 400;
+  color: var(--text-0);
+  background-color: var(--bg-0);
+  /* instrument grid + corner glow for atmosphere */
+  background-image: linear-gradient(rgba(140, 165, 200, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(140, 165, 200, 0.035) 1px, transparent 1px),
+    radial-gradient(1200px 700px at 78% -10%, rgba(47, 227, 172, 0.07), transparent 60%),
+    radial-gradient(1000px 600px at 0% 110%, rgba(76, 196, 255, 0.05), transparent 55%);
+  background-size: 44px 44px, 44px 44px, 100% 100%, 100% 100%;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--bg-3);
+  border-radius: 10px;
+  border: 2px solid var(--bg-0);
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* ---------------------------------------------------------------- helpers */
+.mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.eyebrow {
+  font-size: 11px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--text-2);
+  font-weight: 600;
+}
+.muted {
+  color: var(--text-1);
+}
+.faint {
+  color: var(--text-2);
+}
+
+/* ---------------------------------------------------------------- panels */
+.panel {
+  position: relative;
+  background: linear-gradient(180deg, var(--bg-1), var(--panel));
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-panel);
+}
+/* control-room corner ticks */
+.panel::before,
+.panel::after {
+  content: "";
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  border-color: var(--line-strong);
+  border-style: solid;
+  pointer-events: none;
+}
+.panel::before {
+  top: -1px;
+  left: -1px;
+  border-width: 1px 0 0 1px;
+}
+.panel::after {
+  bottom: -1px;
+  right: -1px;
+  border-width: 0 1px 1px 0;
+}
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--line);
+}
+.panel-title {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+.panel-body {
+  padding: 16px;
+}
+
+/* ---------------------------------------------------------------- buttons */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: var(--text-0);
+  background: var(--bg-2);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  transition: border-color 0.15s, background 0.15s, transform 0.05s;
+}
+.btn:hover {
+  border-color: var(--live);
+  background: var(--bg-3);
+}
+.btn:active {
+  transform: translateY(1px);
+}
+.btn-primary {
+  color: #04140e;
+  background: var(--live);
+  border-color: var(--live);
+}
+.btn-primary:hover {
+  background: #46f0bd;
+  border-color: #46f0bd;
+}
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* ---------------------------------------------------------------- inputs */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.field label {
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-2);
+  font-weight: 600;
+}
+.input,
+.select {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--text-0);
+  background: var(--bg-0);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  padding: 9px 11px;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.input:focus,
+.select:focus {
+  border-color: var(--live);
+  box-shadow: 0 0 0 3px var(--live-dim);
+}
+.input::placeholder {
+  color: var(--text-2);
+}
+
+/* ---------------------------------------------------------------- badges */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+}
+.badge-instant {
+  color: var(--instant);
+  background: var(--instant-dim);
+}
+.badge-average {
+  color: var(--average);
+  background: var(--average-dim);
+}
+.badge .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+/* ---------------------------------------------------------------- tables */
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.table th {
+  text-align: left;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-2);
+  font-weight: 600;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+.table td {
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--line);
+  color: var(--text-0);
+}
+.table tbody tr {
+  transition: background 0.12s;
+}
+.table tbody tr:hover {
+  background: rgba(140, 165, 200, 0.04);
+}
+.table .num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------------------------------------------------------------- misc */
+.tag {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-1);
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 2px 7px;
+}
+
+.empty {
+  display: grid;
+  place-items: center;
+  gap: 8px;
+  padding: 48px 16px;
+  color: var(--text-2);
+  text-align: center;
+}
+
+@keyframes pulse-ring {
+  0% {
+    box-shadow: 0 0 0 0 rgba(47, 227, 172, 0.5);
+  }
+  70% {
+    box-shadow: 0 0 0 7px rgba(47, 227, 172, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(47, 227, 172, 0);
+  }
+}
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes flash-row {
+  from {
+    background: var(--live-dim);
+  }
+  to {
+    background: transparent;
+  }
+}
+.rise {
+  animation: rise 0.5s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}

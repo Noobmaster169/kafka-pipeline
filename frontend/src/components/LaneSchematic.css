@@ -1,0 +1,191 @@
+.schematic {
+  padding: 8px 4px 0;
+}
+.schematic-road {
+  position: relative;
+  height: 196px;
+  margin: 28px 8px 12px;
+}
+
+/* asphalt band, vertically centred */
+.road-surface {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 56px;
+  border-radius: 6px;
+  background: linear-gradient(180deg, #0c1118, #060a0f);
+  border: 1px solid var(--line);
+  box-shadow: inset 0 0 40px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+}
+/* marching centre dashes for a sense of motion */
+.road-dashes {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 2px;
+  transform: translateY(-50%);
+  background: repeating-linear-gradient(
+    90deg,
+    var(--line-strong) 0 22px,
+    transparent 22px 46px
+  );
+  animation: march 1.4s linear infinite;
+  opacity: 0.6;
+}
+@keyframes march {
+  to {
+    background-position-x: -46px;
+  }
+}
+
+/* ---- camera gantry ------------------------------------------------------- */
+.gantry {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  pointer-events: none;
+}
+.gantry-line {
+  position: absolute;
+  top: 30px;
+  bottom: 36px;
+  width: 1px;
+  background: linear-gradient(
+    180deg,
+    var(--line-strong),
+    transparent 45%,
+    var(--line-strong)
+  );
+}
+.gantry-node {
+  position: relative;
+  z-index: 2;
+  width: 26px;
+  height: 26px;
+  margin-top: 6px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  background: var(--bg-2);
+  border: 1px solid var(--line-strong);
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.gantry-eye {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-2);
+  transition: background 0.2s, box-shadow 0.2s;
+}
+.gantry-pulse .gantry-node {
+  border-color: var(--live);
+  box-shadow: var(--glow-live);
+}
+.gantry-pulse .gantry-eye {
+  background: var(--live);
+  box-shadow: 0 0 10px var(--live);
+}
+.gantry-label {
+  position: absolute;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  z-index: 2;
+}
+.gantry-id {
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: var(--text-1);
+}
+.gantry-limit {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-0);
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 0 5px;
+}
+
+/* ---- live car ------------------------------------------------------------ */
+.car {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  /* the slide between camera positions = the motion */
+  transition: left 1.15s cubic-bezier(0.4, 0, 0.25, 1), opacity 1.2s;
+  z-index: 3;
+}
+.car-dot {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  position: relative;
+}
+.car-ok .car-dot {
+  background: var(--live);
+  box-shadow: 0 0 10px var(--live), 0 0 2px #fff inset;
+}
+.car-over .car-dot {
+  background: var(--average);
+  box-shadow: 0 0 12px var(--average), 0 0 2px #fff inset;
+  animation: pulse-ring 1.1s infinite;
+}
+/* motion trail behind the dot */
+.car-dot::before {
+  content: "";
+  position: absolute;
+  right: 9px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 26px;
+  height: 3px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, transparent, currentColor);
+  opacity: 0.35;
+}
+.car-ok .car-dot::before {
+  color: var(--live);
+}
+.car-over .car-dot::before {
+  color: var(--average);
+}
+.car-plate {
+  font-size: 9.5px;
+  letter-spacing: 0.04em;
+  color: var(--text-1);
+  background: rgba(7, 10, 15, 0.7);
+  padding: 1px 5px;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+.car-over .car-plate {
+  color: var(--average);
+}
+.car-fade {
+  opacity: 0;
+}
+
+/* ---- footer -------------------------------------------------------------- */
+.schematic-foot {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  padding: 6px 8px 2px;
+  border-top: 1px solid var(--line);
+}
