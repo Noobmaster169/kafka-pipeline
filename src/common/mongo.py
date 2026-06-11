@@ -65,14 +65,14 @@ def ensure_indexes() -> Database:
     violations.create_index("car_plate")
     violations.create_index("lane_id")
     violations.create_index("date")
-    # Idempotency key: the same physical violation can't be inserted twice even if the
-    # pipeline restarts and reprocesses a micro-batch. One document per violation.
+    # Idempotency key: one violation per vehicle per detection window. `window_start` is
+    # the start time floored to DEDUP_WINDOW, matching the pipeline's car_plate-keyed dedup
+    # grain — so a replayed micro-batch upserts onto the same document instead of inserting
+    # a duplicate, even across restarts.
     violations.create_index(
         [
             ("car_plate", ASCENDING),
-            ("violation_type", ASCENDING),
-            ("timestamp_start", ASCENDING),
-            ("camera_id_start", ASCENDING),
+            ("window_start", ASCENDING),
         ],
         unique=True,
         name="uniq_violation",

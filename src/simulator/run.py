@@ -31,7 +31,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from common import config  # noqa: E402
-from common.kafka_io import make_producer  # noqa: E402
+from common.kafka_io import ensure_topics, make_producer, topic_partition_count  # noqa: E402
 from common.log import banner, get_logger  # noqa: E402
 from common.mongo import get_db  # noqa: E402
 from simulator.behaviors import (  # noqa: E402
@@ -96,12 +96,19 @@ class Stats:
 
 
 def load_cameras_by_lane(db) -> dict[int, list[dict]]:
-    """Group cameras by lane, each list ordered along the road by position."""
+    """Group cameras by lane, each list ordered along the road by position.
+
+    Each camera is tagged with `camera_index`, its 0-based ordinal along the lane, which
+    the Spark join uses to pair only adjacent cameras. Appending a camera at the end of a
+    lane (the runtime hot-add) keeps existing indices stable.
+    """
     by_lane: dict[int, list[dict]] = {}
     for cam in db[config.COLL_CAMERAS].find():
         by_lane.setdefault(int(cam["lane_id"]), []).append(cam)
     for cams in by_lane.values():
         cams.sort(key=lambda c: c["position_km"])
+        for idx, cam in enumerate(cams):
+            cam["camera_index"] = idx
     return by_lane
 
 
@@ -113,7 +120,11 @@ def normalize_ratios(args) -> dict[str, float]:
 
 def show_banner(args, plates, cams_by_lane, ratios) -> None:
     """Print the boxed startup configuration."""
-    rows = [("broker", config.KAFKA_BOOTSTRAP_SERVERS), ("topic", config.KAFKA_TOPIC)]
+    rows = [
+        ("broker", config.KAFKA_BOOTSTRAP_SERVERS),
+        ("topic", config.KAFKA_TOPIC),
+        ("partitions", f"{topic_partition_count(config.KAFKA_TOPIC)} (configured {config.KAFKA_TOPIC_PARTITIONS})"),
+    ]
     if args.source == "synthetic":
         mode = f"synthetic{' / fast' if args.fast else ''} ({args.rate:g} trips/s)"
         mix = "   ".join(f"{k} {v * 100:.0f}%" for k, v in ratios.items())
@@ -262,7 +273,9 @@ def run_fast(args, producer, db, plates, rng, ratios) -> None:
 def run_csv(args, producer, db) -> None:
     import pandas as pd
 
-    cams = {int(c["camera_id"]): c for c in db[config.COLL_CAMERAS].find()}
+    # Use the per-lane loader so each camera carries its camera_index (the join needs it).
+    cams = {int(c["camera_id"]): c
+            for lane_cams in load_cameras_by_lane(db).values() for c in lane_cams}
     data_dir = Path(__file__).resolve().parents[3] / "data"
     frames = []
     for letter in ("A", "B", "C"):
@@ -300,6 +313,7 @@ def run_csv(args, producer, db) -> None:
             car_plate=str(row["car_plate"]),
             lane_id=int(cam["lane_id"]),
             camera_id=int(cam["camera_id"]),
+            camera_index=int(cam["camera_index"]),
             position_km=float(cam["position_km"]),
             speed_limit=float(cam["speed_limit"]),
             timestamp=row["timestamp"].to_pydatetime(),
@@ -343,6 +357,7 @@ def main() -> int:
     rng = random.Random(args.seed)
     db = get_db()
     producer = make_producer()
+    ensure_topics()    # create camera-events with the configured partition count (idempotent)
 
     if args.source == "csv":
         show_banner(args, [], load_cameras_by_lane(db), {})

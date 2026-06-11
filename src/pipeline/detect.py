@@ -77,21 +77,54 @@ def detect_instantaneous(events: DataFrame) -> DataFrame:
     )
 
 
-def detect_average(events: DataFrame) -> DataFrame:
+# The two camera-pair predicates the join-strategy comparison measures (REPORT.md §5.2/§8).
+# The cost model of the stream-join literature (Kang et al.; Teubner & Mueller's handshake
+# join) prices a windowed join by its candidate tuple-pair comparisons, so the strategies
+# differ exactly in the candidate space they admit per k-camera journey:
+#   adjacent  — |Δcamera_index| = 1 : k-1 = O(k) pairs (A3's consecutive-segment refinement)
+#   all-pairs — any distinct pair   : k(k-1)/2 = O(k²) pairs (A2's semantics; the general
+#               windowed-join formulation, kept as the measured baseline)
+CAMERA_PAIR_CLAUSE = {
+    "adjacent": "abs(b.camera_index - a.camera_index) = 1",
+    "all-pairs": "a.camera_index <> b.camera_index",
+}
+
+
+def detect_average(events: DataFrame, strategy: str | None = None) -> DataFrame:
     """
-    Rule 2 — the generalised self-join (proposal §4.2).
+    Rule 2 — the generalised self-join (proposal §4.2, consecutive-segment refinement).
 
     Pair every event `a` with a later event `b` of the same vehicle, on the same lane, at a
-    different camera, within the journey window; the average speed is computed from the two
-    rows' positions and times alone (no camera-config lookup — proposal D3).
+    second camera chosen by `strategy` (default `config.JOIN_STRATEGY` = adjacent), within
+    the journey window; the average speed is computed from the two rows' positions and times
+    alone (no camera-config lookup — D3).
+
+    Pairing only adjacent cameras (rather than every camera pair) computes the average over
+    consecutive segments X-1 -> X only, never across a skipped camera (X-2). This drops the
+    per-vehicle output from O(k^2) to O(k) pairs while still catching the sneaky driver (a
+    constant between-camera speed makes every consecutive segment exceed the limit). The
+    |Δindex| = 1 form (not index+1) keeps both travel directions; `b.event_time > a.event_time`
+    then fixes `a` as the earlier crossing so each pair yields exactly one row.
+
+    The `all-pairs` strategy swaps clause (iii) for `camera_index <> camera_index` — A2's
+    behaviour — and exists so `verify_detect.py` and `benchmarks/join_compare.py` can measure
+    the two strategies against each other on identical input.
+
+    Trade-off (adjacent): a *missed* camera reading breaks the index chain for that gap (cam0
+    then cam2 won't pair), the price of doing this without arbitrary stateful processing
+    (unavailable in PySpark 3.3).
     """
+    strategy = strategy or config.JOIN_STRATEGY
+    if strategy not in CAMERA_PAIR_CLAUSE:
+        raise ValueError(f"unknown JOIN_STRATEGY {strategy!r}; expected one of {sorted(CAMERA_PAIR_CLAUSE)}")
+
     a = events.alias("a")
     b = events.alias("b")
 
     condition = expr(f"""
         a.car_plate  =  b.car_plate                                AND
         a.lane_id    =  b.lane_id                                  AND
-        a.camera_id  <> b.camera_id                                AND
+        {CAMERA_PAIR_CLAUSE[strategy]}                             AND
         b.event_time >  a.event_time                               AND
         b.event_time <= a.event_time + interval {config.JOIN_WINDOW}
     """)
@@ -131,19 +164,25 @@ def detect_average(events: DataFrame) -> DataFrame:
     )
 
 
-def build_violations(events: DataFrame) -> DataFrame:
+def build_violations(events: DataFrame, strategy: str | None = None) -> DataFrame:
     """
-    Combine both detectors and collapse repeated detections of the same offence.
+    Combine both detectors and collapse to one violation per car per window.
 
-    De-dup keys on (car_plate, violation_type) within DEDUP_WINDOW — this is the fix for
-    the A2 bug (which keyed on car_plate alone and dropped a vehicle's second violation
-    type). A single drive that fires the same type at several cameras/segments collapses to
-    one row; a different type is kept.
+    A speeding car fires many raw detections — INSTANTANEOUS at several cameras and AVERAGE
+    on several segments. For enforcement we only need to flag the car once, so the de-dup
+    keys on `car_plate` alone within DEDUP_WINDOW: the first violation seen for a plate (of
+    either type) is emitted and the rest are dropped. The surviving type is not significant
+    and is simply whichever row arrives first.
+
+    This is a rolling, watermark-bounded window, NOT permanent suppression. A plate is held
+    in dedup state only for DEDUP_WINDOW of event time, then evicted — so a later offence by
+    the same car is recorded again. A car can therefore be flagged many times across a
+    day/hour, but at most once per ~DEDUP_WINDOW.
     """
     instantaneous = detect_instantaneous(events)
-    average = detect_average(events)
+    average = detect_average(events, strategy)
     combined = instantaneous.unionByName(average)
     return (
         combined.withWatermark("timestamp_start", config.DEDUP_WINDOW)
-        .dropDuplicates(["car_plate", "violation_type"])
+        .dropDuplicates(["car_plate"])
     )

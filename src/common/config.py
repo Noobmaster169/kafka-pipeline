@@ -51,8 +51,19 @@ WATERMARK_DURATION = os.getenv("WATERMARK_DURATION", "10 minutes")
 # Max gap between two camera crossings that can still be one journey (the join window).
 JOIN_WINDOW = os.getenv("JOIN_WINDOW", "10 minutes")
 
-# Window over which repeated detections of the same (plate, violation_type) collapse.
+# Which camera-pair predicate the AVERAGE self-join uses (REPORT.md §5.2/§8):
+#   adjacent  — consecutive cameras only (|Δcamera_index| = 1): O(k) pairs per vehicle.
+#               The A3 refinement and the production default.
+#   all-pairs — every distinct camera pair: O(k²) pairs per vehicle. A2's semantics,
+#               kept as the measured baseline for the join-strategy comparison.
+JOIN_STRATEGY = os.getenv("JOIN_STRATEGY", "adjacent")
+
+# Window over which repeated detections of the same vehicle collapse to one flag.
 DEDUP_WINDOW = os.getenv("DEDUP_WINDOW", "10 minutes")
+
+# Numeric form of DEDUP_WINDOW (whole minutes) — used to bucket a violation's start
+# time into the per-car idempotency window that keys the unique violations index.
+DEDUP_WINDOW_MINUTES = int(DEDUP_WINDOW.split()[0])
 
 # --------------------------------------------------------------------------- #
 # Spark

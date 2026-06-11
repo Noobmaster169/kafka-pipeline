@@ -1,0 +1,5 @@
+ran_at,label,mode,trips,kafka_partitions,shuffle_partitions,join_strategy,produce_seconds,events_estimate,produce_eps,drain_seconds,pipeline_eps,violations_new,instant,average,latency_n,latency_p50_s,latency_p95_s,latency_max_s,latency_reliable
+2026-06-11T20:56:04.974088+00:00,p1,fast,20000,1,4,adjacent,8.76,60000,6847.1,10.69,5610.1,4690,2923,1767,5,0.891,1.191,1.191,no
+2026-06-11T20:59:43.991187+00:00,p2,fast,20000,2,4,adjacent,8.06,60000,7443.9,9.86,6085.3,4704,3000,1704,9,0.73,2.051,2.051,no
+2026-06-11T21:01:27.079771+00:00,p4,fast,20000,4,4,adjacent,8.01,60000,7491.6,10.11,5933.4,4779,3000,1779,3,0.23,1.232,1.232,no
+2026-06-11T21:03:14.729337+00:00,p6,fast,20000,6,4,adjacent,7.54,60000,7955.3,10.53,5697.6,4737,3018,1719,4,0.492,0.943,0.943,no

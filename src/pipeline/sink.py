@@ -18,8 +18,22 @@ from common.mongo import get_db
 
 log = get_logger("pipeline")
 
-# Fields that uniquely identify a physical violation (matches the unique Mongo index).
-_KEY_FIELDS = ("car_plate", "violation_type", "timestamp_start", "camera_id_start")
+# The per-car, per-window idempotency key (matches the unique Mongo index): one stored
+# violation per vehicle per DEDUP_WINDOW, regardless of type.
+_KEY_FIELDS = ("car_plate", "window_start")
+
+
+def _window_start(ts: datetime) -> datetime:
+    """Floor an event time to the DEDUP_WINDOW bucket — the dedup grain at rest.
+
+    `(car_plate, window_start)` is the idempotency key. It matches the pipeline's
+    "one violation per car per DEDUP_WINDOW" dedup, so a replayed micro-batch upserts
+    onto the same document instead of inserting a duplicate — even if it re-emits a
+    different representative crossing for the same car-window.
+    """
+    w = config.DEDUP_WINDOW_MINUTES
+    floored = (ts.minute // w) * w if 0 < w <= 60 else 0
+    return ts.replace(minute=floored, second=0, microsecond=0)
 
 
 def _to_document(row) -> dict:
@@ -39,7 +53,9 @@ def _to_document(row) -> dict:
         "speed_limit": float(row["speed_limit"]),
         "speed_reading": None if row["speed_reading"] is None else float(row["speed_reading"]),
         "avg_speed": None if row["avg_speed"] is None else float(row["avg_speed"]),
-        # Daily bucket (midnight of the start) + when we detected it.
+        # Per-car idempotency window (start floored to DEDUP_WINDOW) + daily bucket +
+        # when we detected it.
+        "window_start": _window_start(ts_start),
         "date": ts_start.replace(hour=0, minute=0, second=0, microsecond=0),
         "detected_at": datetime.now(timezone.utc),
     }
@@ -48,7 +64,7 @@ def _to_document(row) -> dict:
 def _to_json(doc: dict) -> dict:
     """A JSON-safe copy (datetimes -> ISO strings) for publishing to Kafka."""
     out = dict(doc)
-    for field in ("timestamp_start", "timestamp_end", "date", "detected_at"):
+    for field in ("timestamp_start", "timestamp_end", "window_start", "date", "detected_at"):
         if isinstance(out.get(field), datetime):
             out[field] = out[field].isoformat()
     return out

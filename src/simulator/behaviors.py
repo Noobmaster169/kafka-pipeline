@@ -76,7 +76,9 @@ def generate_trip(
     events: list[tuple[float, dict]] = []
     offset = 0.0
     prev = None
-    for cam in cams:
+    # `idx` is the camera's ordinal along the lane (cams is position-sorted); the join
+    # uses it to pair only adjacent cameras.
+    for idx, cam in enumerate(cams):
         if prev is not None:
             distance_km = float(cam["position_km"]) - float(prev["position_km"])
             offset += distance_km / between * 3600.0   # seconds to cover the segment
@@ -84,6 +86,7 @@ def generate_trip(
             car_plate=car_plate,
             lane_id=int(cam["lane_id"]),
             camera_id=int(cam["camera_id"]),
+            camera_index=idx,
             position_km=float(cam["position_km"]),
             speed_limit=float(cam["speed_limit"]),
             timestamp=start_time + timedelta(seconds=offset),
@@ -104,19 +107,20 @@ def summarize_trip(events: list[tuple[float, dict]]) -> dict:
     max_spot = max((e["speed_reading"] for _, e in events), default=0.0)
     expect_instantaneous = any(e["speed_reading"] > e["speed_limit"] for _, e in events)
 
+    # Only consecutive crossings are paired by the join (|Δcamera_index| = 1), so the
+    # expectation is evaluated over adjacent segments only — matching the pipeline.
     max_avg = 0.0
     expect_average = False
-    for i in range(len(events)):
+    for i in range(len(events) - 1):
         off_i, ev_i = events[i]
-        for j in range(i + 1, len(events)):
-            off_j, ev_j = events[j]
-            dt = off_j - off_i
-            if dt <= 0:
-                continue
-            avg = (ev_j["position_km"] - ev_i["position_km"]) * 3600.0 / dt
-            max_avg = max(max_avg, avg)
-            if avg > ev_j["speed_limit"]:   # end-camera limit governs the segment
-                expect_average = True
+        off_j, ev_j = events[i + 1]
+        dt = off_j - off_i
+        if dt <= 0:
+            continue
+        avg = abs(ev_j["position_km"] - ev_i["position_km"]) * 3600.0 / dt
+        max_avg = max(max_avg, avg)
+        if avg > ev_j["speed_limit"]:   # end-camera limit governs the segment
+            expect_average = True
 
     return {
         "n_events": len(events),

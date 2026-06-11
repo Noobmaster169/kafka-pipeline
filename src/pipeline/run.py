@@ -2,9 +2,10 @@
 The re-architected AWAS Spark Structured Streaming pipeline.
 
 Reads the single partitioned `camera-events` topic, detects INSTANTANEOUS and AVERAGE
-violations (the generalised self-join of proposal §4.2), de-duplicates per
-(car_plate, violation_type), and sinks one document per violation to MongoDB while
-republishing each to the `violations` Kafka topic for the live dashboard.
+violations (the generalised self-join of proposal §4.2), de-duplicates per car_plate
+(one flag per car per detection window), and sinks one document per violation to MongoDB
+(keyed `(car_plate, window_start)`) while republishing each to the `violations` Kafka
+topic for the live dashboard.
 
 Run from src/:
     python -m pipeline.run            # start the streaming query
@@ -24,6 +25,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from common import config  # noqa: E402
+from common.kafka_io import ensure_topics, topic_partition_count  # noqa: E402
 from common.log import banner, get_logger  # noqa: E402
 from common.mongo import ensure_indexes, get_db  # noqa: E402
 from pipeline.detect import build_violations, read_events  # noqa: E402
@@ -66,10 +68,12 @@ def show_banner(spark) -> None:
         ("shuffle parts", config.SPARK_SHUFFLE_PARTITIONS),
         ("broker", config.KAFKA_BOOTSTRAP_SERVERS),
         ("in topic", config.KAFKA_TOPIC),
+        ("partitions", f"{topic_partition_count(config.KAFKA_TOPIC)} (configured {config.KAFKA_TOPIC_PARTITIONS})"),
         ("out topic", config.KAFKA_VIOLATIONS_TOPIC),
         ("mongo", f"{config.MONGO_HOST}:{config.MONGO_PORT}/{config.MONGO_DB}"),
         ("watermark", config.WATERMARK_DURATION),
         ("join window", config.JOIN_WINDOW),
+        ("join strategy", config.JOIN_STRATEGY),
         ("dedup window", config.DEDUP_WINDOW),
         ("checkpoint", str(CHECKPOINT_PATH)),
     ])
@@ -88,6 +92,7 @@ def main() -> int:
         reset_state()
 
     ensure_indexes()   # make sure the unique violations index exists before we write
+    ensure_topics()    # create camera-events with the configured partition count (idempotent)
     spark = build_spark()
     show_banner(spark)
 
