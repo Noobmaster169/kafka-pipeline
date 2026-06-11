@@ -105,7 +105,7 @@ export default function Overview() {
           action={<ConnectionDot status={status} label="STREAMING" />}
           bodyClass="no-pad"
         >
-          <div style={{ maxHeight: 720, overflowY: "auto", margin: -16 }}>
+          <div style={{ maxHeight: 760, overflowY: "auto", margin: -16 }}>
             <LiveViolationFeed
               violations={feed}
               showLane

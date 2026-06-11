@@ -65,7 +65,7 @@ function CarModel({ type, plate }) {
 export default function CarViewer({ type, plate }) {
   const t = (type || "sedan").toLowerCase();
   return (
-    <Canvas style={{ height: 230 }} camera={{ position: [2.4, 1.4, -2.6], fov: 35 }} dpr={[1, 2]}>
+    <Canvas style={{ height: 270 }} camera={{ position: [3.0, 1.7, -3.2], fov: 35 }} dpr={[1, 2]}>
       <Suspense fallback={null}>
         <ambientLight intensity={0.65} />
         <directionalLight position={[4, 6, 3]} intensity={1.5} />

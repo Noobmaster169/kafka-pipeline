@@ -6,6 +6,7 @@ import LiveViolationFeed from "../components/LiveViolationFeed.jsx";
 import { IconSearch, IconPlus } from "../components/icons.jsx";
 import { fmtDateTime } from "../lib/format.js";
 import "./pages.css";
+import CarViewer from "../components/CarViewer.jsx";
 
 const PAGE = 12;
 
@@ -179,6 +180,7 @@ function CarDetail({ car }) {
   }
   return (
     <Panel title="Vehicle Detail">
+      <CarViewer type={car.vehicle_type} plate={car.car_plate} />
       <div className="detail-grid">
         <Field label="Plate" value={car.car_plate} mono big />
         <Field label="Type" value={car.vehicle_type} />
