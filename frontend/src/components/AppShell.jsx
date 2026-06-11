@@ -33,9 +33,20 @@ export default function AppShell() {
 
   // Lane nav reflects live lane membership; refresh on navigation so a newly
   // seeded/added lane shows up without a reload.
-  useEffect(() => {
-    api.listLanes().then(setLanes).catch(() => setLanes([]));
-  }, [location.pathname]);
+useEffect(() => {
+  let alive = true;
+  const loadData = () => {
+    api.listLanes()
+      .then((data) => { if (alive) setLanes(data); })
+      .catch(() => {});                 // keep last good list on a failed poll
+  };
+
+  loadData();
+  const interval = setInterval(loadData, 5000);
+  return () => { alive = false; clearInterval(interval); };
+}, [location.pathname]);
+
+  const totalViolations = lanes.reduce((n, l) => n + (l.violations?.total ?? 0), 0);
 
   return (
     <div className="shell">
@@ -54,6 +65,9 @@ export default function AppShell() {
           <NavLink to="/" end className="nav-item">
             <IconOverview />
             <span>Overview</span>
+            {totalViolations > 0 && (
+              <span className="nav-count mono">{totalViolations}</span>
+            )}
           </NavLink>
 
           <div className="nav-group-label">Lanes</div>

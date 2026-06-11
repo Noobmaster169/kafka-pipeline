@@ -344,6 +344,10 @@ pipeline will be measured under systematic sweeps of:
 Results will be emitted as data files and charts generated entirely from executed runs, with no
 static substitutes, consistent with the assignment's reproducibility requirements.
 
+The executed evaluation, including the partition sweep results and latency
+distributions, is in the repository under benchmarks/ with the full write-up in
+the project README (section "Empirical evaluation (Phase 6)").
+
 ---
 
 ## 6. Trade-offs and Limitations

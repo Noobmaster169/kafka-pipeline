@@ -7,14 +7,25 @@ import { Panel, StatCard, ConnectionDot, Spinner, ErrorState } from "../componen
 import LiveViolationFeed from "../components/LiveViolationFeed.jsx";
 import { IconArrowRight } from "../components/icons.jsx";
 import "./pages.css";
+import LatestCapture from "../components/LatestCapture.jsx";
+import HighwayStrip from "../components/HighwayStrip.jsx";
 
 export default function Overview() {
   const [lanes, setLanes] = useState(null);
   const [error, setError] = useState(null);
   const { feed, status } = useViolationFeed();
+  const [cameras, setCameras] = useState([]);
 
   useEffect(() => {
-    api.listLanes().then(setLanes).catch(setError);
+    let alive = true;
+    const loadData = () => {
+      Promise.all([api.listLanes(), api.listCameras()])
+        .then(([ls, cs]) => { if (alive) { setLanes(ls); setCameras(cs); } })
+        .catch((e) => { if (alive) setLanes((cur) => { if (!cur) setError(e); return cur; }); });
+    };
+    loadData();
+    const interval = setInterval(loadData, 5000);
+    return () => { alive = false; clearInterval(interval); };
   }, []);
 
   if (error) return <ErrorState error={error} />;
@@ -54,43 +65,47 @@ export default function Overview() {
       </div>
 
       <div className="grid-2">
-        <Panel title="Monitored Lanes" bodyClass="">
-          <div className="lane-cards">
-            {lanes.map((lane) => {
-              const { total, instantaneous, average } = lane.violations;
-              const denom = total || 1;
-              return (
-                <Link key={lane.lane_id} to={`/lanes/${lane.lane_id}`} className="lane-card">
-                  <div className="lane-card-head">
-                    <div>
-                      <div className="lane-card-name">{lane.name}</div>
-                      <div className="lane-card-meta mono">
-                        LANE {lane.lane_id} · {lane.camera_count} cameras
+        <div>
+          <Panel title="Monitored Lanes" bodyClass="">
+            <div className="lane-cards">
+              {lanes.map((lane) => {
+                const { total, instantaneous, average } = lane.violations;
+                const denom = total || 1;
+                return (
+                  <Link key={lane.lane_id} to={`/lanes/${lane.lane_id}`} className="lane-card">
+                    <div className="lane-card-head">
+                      <div>
+                        <div className="lane-card-name">{lane.name}</div>
+                        <div className="lane-card-meta mono">
+                          LANE {lane.lane_id} · {lane.camera_count} cameras
+                        </div>
                       </div>
+                      <IconArrowRight style={{ color: "var(--text-2)" }} />
                     </div>
-                    <IconArrowRight style={{ color: "var(--text-2)" }} />
-                  </div>
-                  <div className="lane-card-total">{total}</div>
-                  <div className="split-bar">
-                    <i className="seg-instant" style={{ width: `${(instantaneous / denom) * 100}%` }} />
-                    <i className="seg-average" style={{ width: `${(average / denom) * 100}%` }} />
-                  </div>
-                  <div className="split-legend">
-                    <span className="legend-instant">{instantaneous} instant</span>
-                    <span className="legend-average">{average} average</span>
-                  </div>
-                </Link>
-              );
-            })}
-          </div>
-        </Panel>
+                    <div className="lane-card-total">{total}</div>
+                    <div className="split-bar">
+                      <i className="seg-instant" style={{ width: `${(instantaneous / denom) * 100}%` }} />
+                      <i className="seg-average" style={{ width: `${(average / denom) * 100}%` }} />
+                    </div>
+                    <div className="split-legend">
+                      <span className="legend-instant">{instantaneous} instant</span>
+                      <span className="legend-average">{average} average</span>
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+          </Panel>
+
+          <LatestCapture violation={feed[0]} />
+        </div>
 
         <Panel
           title="Live Violation Feed"
           action={<ConnectionDot status={status} label="STREAMING" />}
           bodyClass="no-pad"
         >
-          <div style={{ maxHeight: 460, overflowY: "auto", margin: -16 }}>
+          <div style={{ maxHeight: 760, overflowY: "auto", margin: -16 }}>
             <LiveViolationFeed
               violations={feed}
               showLane
@@ -99,6 +114,23 @@ export default function Overview() {
           </div>
         </Panel>
       </div>
+
+      <Panel
+        title="Network Highways · 3D"
+        action={<span className="eyebrow">all lanes live</span>}
+        style={{ marginTop: 18 }}
+      >
+        {lanes.map((lane) => (
+          <HighwayStrip
+            key={lane.lane_id}
+            lane={lane}
+            cameras={cameras
+              .filter((c) => c.lane_id === lane.lane_id)
+              .sort((a, b) => a.position_km - b.position_km)}
+            violations={feed.filter((v) => v.lane_id === lane.lane_id)}
+          />
+        ))}
+      </Panel>
     </div>
   );
 }

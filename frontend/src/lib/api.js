@@ -40,6 +40,8 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     }),
+  removeLastCamera: (laneId) =>
+    request(`/cameras/last${qs({ lane_id: laneId })}`, { method: "DELETE" }),
 
   // cars
   listCars: (params) => request(`/cars${qs(params)}`),

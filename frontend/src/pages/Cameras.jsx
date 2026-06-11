@@ -50,6 +50,24 @@ export default function Cameras() {
     }
   }
 
+  async function removeLast(lane) {
+  if (!confirm(`Remove the last camera from ${lane.name}?`)) return;
+  setBusy(true);
+  setMsg(null);
+  try {
+    const { removed } = await api.removeLastCamera(lane.lane_id);
+    setMsg({
+      ok: true,
+      text: `Camera ${removed.camera_id} removed from ${lane.name} (was at ${removed.position_km} km). The simulator drops it on its next config refresh — no restart.`,
+    });
+    await load();
+  } catch (err) {
+    setMsg({ ok: false, text: err.message });
+  } finally {
+    setBusy(false);
+  }
+}
+
   if (error) return <ErrorState error={error} />;
   if (!lanes) return <Spinner label="Loading cameras" />;
 
@@ -103,10 +121,27 @@ export default function Cameras() {
         </form>
         {msg && <div className={`form-msg ${msg.ok ? "ok" : "err"}`}>{msg.text}</div>}
       </Panel>
-
       <div className="grid-cols">
         {byLane.map(({ lane, cams }) => (
-          <Panel key={lane.lane_id} title={`${lane.name} · LANE ${lane.lane_id}`}>
+          <Panel
+            key={lane.lane_id}
+            title={`${lane.name} · LANE ${lane.lane_id}`}
+            action={
+              <button
+                className="btn"
+                type="button"
+                disabled={busy || cams.length <= 2}
+                title={
+                  cams.length <= 2
+                    ? "A lane needs at least 2 cameras"
+                    : "Remove the end-of-lane camera"
+                }
+                onClick={() => removeLast(lane)}
+              >
+                − Remove last
+              </button>
+            }
+          >
             <div className="cam-row">
               {cams.map((c) => (
                 <div key={c.camera_id} className="cam-chip">
