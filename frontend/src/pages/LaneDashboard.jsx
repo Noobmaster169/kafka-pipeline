@@ -6,6 +6,7 @@ import { useLiveSocket } from "../lib/useLiveSocket.js";
 import { useViolationFeed } from "../lib/useViolationFeed.js";
 import { Panel, StatCard, ConnectionDot, Spinner, ErrorState } from "../components/ui.jsx";
 import LaneSchematic from "../components/LaneSchematic.jsx";
+import LaneHighway3D from "../components/LaneHighway3D.jsx";
 import LiveViolationFeed from "../components/LiveViolationFeed.jsx";
 import { fmtKm } from "../lib/format.js";
 import "./pages.css";
@@ -16,29 +17,32 @@ export default function LaneDashboard() {
   const [lane, setLane] = useState(null);
   const [error, setError] = useState(null);
 
-  // Buffer camera-event crossings off the socket; the schematic drains the queue
-  // on its own animation tick (decoupling socket cadence from rendering).
+  // Buffer camera-event crossings off the socket; the schematic and the 3D
+  // highway each drain their own queue on their own animation tick.
   const eventQueueRef = useRef([]);
+  const highwayQueueRef = useRef([]);
 
-useEffect(() => {
-  setLane(null);                 // reset only when switching lanes
-  setError(null);
-  eventQueueRef.current = [];
+  useEffect(() => {
+    setLane(null);                 // reset only when switching lanes
+    setError(null);
+    eventQueueRef.current = [];
+    highwayQueueRef.current = [];
 
-  let alive = true;
-  const loadData = () => {
-    api.getLane(id)
-      .then((data) => { if (alive) setLane(data); })
-      .catch((e) => { if (alive) setLane((cur) => { if (!cur) setError(e); return cur; }); });
-  };
+    let alive = true;
+    const loadData = () => {
+      api.getLane(id)
+        .then((data) => { if (alive) setLane(data); })
+        .catch((e) => { if (alive) setLane((cur) => { if (!cur) setError(e); return cur; }); });
+    };
 
-  loadData();
-  const interval = setInterval(loadData, 5000);
-  return () => { alive = false; clearInterval(interval); };
-}, [id]);
+    loadData();
+    const interval = setInterval(loadData, 5000);
+    return () => { alive = false; clearInterval(interval); };
+  }, [id]);
 
   const onCameraEvent = useCallback((ev) => {
     eventQueueRef.current.push(ev);
+    highwayQueueRef.current.push(ev);
   }, []);
   const laneStatus = useLiveSocket(`/ws/lane/${id}`, onCameraEvent);
   const { feed, status: vioStatus } = useViolationFeed({ laneId: id });
@@ -80,6 +84,15 @@ useEffect(() => {
         bodyClass=""
       >
         <LaneSchematic cameras={lane.cameras} eventQueueRef={eventQueueRef} />
+      </Panel>
+
+      <Panel
+        title="Lane Highway · 3D"
+        action={<span className="eyebrow">live crossings</span>}
+        style={{ marginBottom: 18 }}
+        bodyClass=""
+      >
+        <LaneHighway3D cameras={lane.cameras} eventQueueRef={highwayQueueRef} />
       </Panel>
 
       <div className="grid-2">
