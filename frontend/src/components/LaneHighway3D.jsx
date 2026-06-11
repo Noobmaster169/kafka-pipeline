@@ -4,7 +4,7 @@ import { useGLTF, Text, OrbitControls, Billboard } from "@react-three/drei";
 import * as THREE from "three";
 
 const SCALE = 10;           // world units per km along the road (z axis)
-const LANE_X = [-1.6, 1.6];
+const LANE_X = [-3, 0, 3];
 const MODELS = ["sedan", "suv", "truck", "hatchback", "coupe"];
 const MODEL_URL = (m) => `/models/${m}.glb`;
 
@@ -49,16 +49,32 @@ function Gantry({ z, label, limit, flashesRef, camId }) {
 }
 
 function Road({ length }) {
+  const dashCount = Math.ceil(length / 3) + 6;
+  const dashes = Array.from({ length: dashCount });
+  const dividers = [-1.5, 1.5];   // dashed lines between the 3 lanes
+  const edges = [-4.5, 4.5];      // solid road edges
   return (
     <group>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, length / 2 - 6]}>
         <planeGeometry args={[14, length + 24]} />
         <meshStandardMaterial color="#0b0c10" />
       </mesh>
-      {Array.from({ length: Math.ceil(length / 3) + 6 }).map((_, i) => (
-        <mesh key={i} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.01, -6 + i * 3]}>
-          <planeGeometry args={[0.18, 1.6]} />
-          <meshBasicMaterial color="#2a2f3a" />
+
+      {/* dashed lane dividers */}
+      {dividers.map((x) =>
+        dashes.map((_, i) => (
+          <mesh key={`${x}-${i}`} rotation={[-Math.PI / 2, 0, 0]} position={[x, 0.01, -6 + i * 3]}>
+            <planeGeometry args={[0.16, 1.6]} />
+            <meshBasicMaterial color="#3a4150" />
+          </mesh>
+        ))
+      )}
+
+      {/* solid road edges */}
+      {edges.map((x) => (
+        <mesh key={`edge-${x}`} rotation={[-Math.PI / 2, 0, 0]} position={[x, 0.01, length / 2 - 6]}>
+          <planeGeometry args={[0.18, length + 24]} />
+          <meshBasicMaterial color="#454d5c" />
         </mesh>
       ))}
     </group>
@@ -164,8 +180,8 @@ function Traffic({ eventQueueRef, cameras, flashesRef, violations = [] }) {
         cars.current.set(ev.car_plate, {
           plate: ev.car_plate,
           model: MODELS[h % MODELS.length],
-          // jittered lane + stagger so simultaneous spawns don't stack
-          x: LANE_X[h % LANE_X.length] + (((h >> 3) % 5) - 2) * 0.28,
+          // fixed lane by plate hash; z stagger so simultaneous spawns don't stack
+          x: LANE_X[hash(ev.car_plate) % LANE_X.length],
           z: gz - 2.5 - ((h >> 6) % 45) / 10,
           v: Math.max(2, (ev.speed_reading / 100) * 7),
           violationType: over ? "INSTANTANEOUS" : null,
@@ -190,10 +206,10 @@ export default function LaneHighway3D({ cameras = [], eventQueueRef, violations 
 
   return (
     <div style={{ height: 380 }}>
-      <Canvas camera={{ position: [24, 9, mid], fov: 40 }} dpr={[1, 2]}>
-        <ambientLight intensity={0.4} />
-        <directionalLight position={[14, 16, mid]} intensity={1.2} />
-        <fog attach="fog" args={["#0b0c10", 30, 110]} />
+      <Canvas camera={{ position: [-(length * 0.72), length * 0.32, mid], fov: 38 }} dpr={[1, 2]}>
+        <ambientLight intensity={0.55} />
+        <directionalLight position={[-16, 18, mid]} intensity={1.1} />
+        <fog attach="fog" args={["#0b0c10", 55, 170]} />
         <Suspense fallback={null}>
           <Road length={length} />
           {cameras.map((c) => (
@@ -203,8 +219,8 @@ export default function LaneHighway3D({ cameras = [], eventQueueRef, violations 
           <Traffic eventQueueRef={eventQueueRef} cameras={cameras} flashesRef={flashesRef} violations={violations} />
         </Suspense>
         <OrbitControls enablePan={false} target={[0, 1, mid]}
-                       minPolarAngle={0.4} maxPolarAngle={1.45}
-                       minDistance={10} maxDistance={60} />
+                       minPolarAngle={0.3} maxPolarAngle={1.45}
+                       minDistance={12} maxDistance={90} />
       </Canvas>
     </div>
   );
