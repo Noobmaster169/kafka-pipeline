@@ -127,6 +127,7 @@ export default function Overview() {
             cameras={cameras
               .filter((c) => c.lane_id === lane.lane_id)
               .sort((a, b) => a.position_km - b.position_km)}
+            violations={feed.filter((v) => v.lane_id === lane.lane_id)}
           />
         ))}
       </Panel>

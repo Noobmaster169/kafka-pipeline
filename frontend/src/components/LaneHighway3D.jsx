@@ -1,4 +1,4 @@
-import { useRef, useState, useMemo, Suspense } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { useGLTF, Text, OrbitControls, Billboard } from "@react-three/drei";
 import * as THREE from "three";
@@ -9,6 +9,10 @@ const MODELS = ["sedan", "suv", "truck", "hatchback", "coupe"];
 const MODEL_URL = (m) => `/models/${m}.glb`;
 
 const hash = (s) => [...(s || "X")].reduce((n, c) => (n * 31 + c.charCodeAt(0)) >>> 0, 7);
+
+// Violation colours: amber instant, rose average (matches the feed badges).
+const VIO_COLOR = (t) =>
+  t === "AVERAGE" ? "#f43f5e" : t === "INSTANTANEOUS" ? "#f59e0b" : null;
 
 /* ---------- infrastructure ---------- */
 function Gantry({ z, label, limit, flashesRef, camId }) {
@@ -68,30 +72,33 @@ function Car({ data }) {
   const body = useMemo(() => {
     const c = scene.clone(true);
     const tint = new THREE.Color(`hsl(${hash(data.plate) % 360}, 60%, 52%)`);
+    const vcolor = VIO_COLOR(data.violationType);
     c.traverse((o) => {
       if (!o.isMesh) return;
       o.material = o.material.clone();
       const n = `${o.material.name} ${o.name}`.toLowerCase();
       o.material.color = n.includes("wheel") || n.includes("tire")
         ? new THREE.Color("#15151a") : tint;
-      if (data.overLimit) {
-        o.material.emissive = new THREE.Color("#f43f5e");
+      if (vcolor) {
+        o.material.emissive = new THREE.Color(vcolor);
         o.material.emissiveIntensity = 0.5;
       }
     });
     return c;
-  }, [scene, data.plate, data.overLimit]);
+  }, [scene, data.plate, data.violationType]);
 
   useFrame((_, dt) => {
     data.z += data.v * dt;
     if (group.current) group.current.position.set(data.x, 0, data.z);
   });
 
+  const labelColor = VIO_COLOR(data.violationType) || "#cfd6df";
+
   return (
     <group ref={group}>
       <primitive object={body} />
       <Billboard position={[0, 1.6, 0]}>
-        <Text fontSize={0.34} color={data.overLimit ? "#f43f5e" : "#cfd6df"} anchorX="center">
+        <Text fontSize={0.34} color={labelColor} anchorX="center">
           {data.plate}
         </Text>
       </Billboard>
@@ -100,12 +107,32 @@ function Car({ data }) {
 }
 
 /* ---------- conductor ---------- */
-function Traffic({ eventQueueRef, cameras, flashesRef }) {
+function Traffic({ eventQueueRef, cameras, flashesRef, violations = [] }) {
   const cars = useRef(new Map());
   const [, bump] = useState(0);
   const endZ = (cameras.at(-1)?.position_km ?? 3) * SCALE + 14;
   const camByIdx = useMemo(
     () => Object.fromEntries(cameras.map((c) => [c.camera_id, c])), [cameras]);
+
+  // Light up a car the moment a violation is confirmed for its plate -
+  // catches sneaky drivers whose spot readings were all legal. AVERAGE
+  // wins over INSTANTANEOUS if a car somehow has both, so the segment
+  // offence is what shows.
+  const seenViolations = useRef(new Set());
+  useEffect(() => {
+    let changed = false;
+    for (const v of violations.slice(0, 12)) {
+      const key = `${v.car_plate}|${v.violation_type}|${v.timestamp_start}`;
+      if (seenViolations.current.has(key)) continue;
+      seenViolations.current.add(key);
+      const car = cars.current.get(v.car_plate);
+      if (car && (!car.violationType || v.violation_type === "AVERAGE")) {
+        car.violationType = v.violation_type;
+        changed = true;
+      }
+    }
+    if (changed) bump((n) => n + 1);
+  }, [violations]);
 
   useFrame(() => {
     let changed = false;
@@ -124,7 +151,9 @@ function Traffic({ eventQueueRef, cameras, flashesRef }) {
       const existing = cars.current.get(ev.car_plate);
       if (existing) {
         existing.v = Math.max(2, (ev.speed_reading / 100) * 7);
-        existing.overLimit = existing.overLimit || over;
+        // an over-limit spot reading marks instant, unless an average
+        // conviction has already claimed the car
+        if (over && existing.violationType !== "AVERAGE") existing.violationType = "INSTANTANEOUS";
         if (existing.z < gz - 1) existing.z = gz - 1.2;
       } else {
         if (cars.current.size >= 30) {
@@ -139,7 +168,7 @@ function Traffic({ eventQueueRef, cameras, flashesRef }) {
           x: LANE_X[h % LANE_X.length] + (((h >> 3) % 5) - 2) * 0.28,
           z: gz - 2.5 - ((h >> 6) % 45) / 10,
           v: Math.max(2, (ev.speed_reading / 100) * 7),
-          overLimit: over,
+          violationType: over ? "INSTANTANEOUS" : null,
         });
         changed = true;
       }
@@ -154,7 +183,7 @@ function Traffic({ eventQueueRef, cameras, flashesRef }) {
 }
 
 /* ---------- main export ---------- */
-export default function LaneHighway3D({ cameras = [], eventQueueRef }) {
+export default function LaneHighway3D({ cameras = [], eventQueueRef, violations = [] }) {
   const flashesRef = useRef({});
   const length = ((cameras.at(-1)?.position_km ?? 3) * SCALE) + 16;
   const mid = length / 2;
@@ -171,7 +200,7 @@ export default function LaneHighway3D({ cameras = [], eventQueueRef }) {
             <Gantry key={c.camera_id} z={c.position_km * SCALE} camId={c.camera_id}
                     label={`CAM ${c.camera_id}`} limit={c.speed_limit} flashesRef={flashesRef} />
           ))}
-          <Traffic eventQueueRef={eventQueueRef} cameras={cameras} flashesRef={flashesRef} />
+          <Traffic eventQueueRef={eventQueueRef} cameras={cameras} flashesRef={flashesRef} violations={violations} />
         </Suspense>
         <OrbitControls enablePan={false} target={[0, 1, mid]}
                        minPolarAngle={0.4} maxPolarAngle={1.45}

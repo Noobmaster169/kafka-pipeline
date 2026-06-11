@@ -92,9 +92,8 @@ export default function LaneDashboard() {
         style={{ marginBottom: 18 }}
         bodyClass=""
       >
-        <LaneHighway3D cameras={lane.cameras} eventQueueRef={highwayQueueRef} />
+         <LaneHighway3D cameras={lane.cameras} eventQueueRef={highwayQueueRef} violations={feed} />
       </Panel>
-
       <div className="grid-2">
         <Panel title="Camera Gantries">
           <div className="cam-row">
