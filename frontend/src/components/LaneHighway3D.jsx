@@ -110,6 +110,7 @@ function Traffic({ eventQueueRef, cameras, flashesRef }) {
   useFrame(() => {
     let changed = false;
     const q = eventQueueRef.current;
+    if (q.length > 90) q.splice(0, q.length - 90);
     while (q.length) {
       const ev = q.shift();
       const cam = camByIdx[ev.camera_id];
@@ -126,6 +127,11 @@ function Traffic({ eventQueueRef, cameras, flashesRef }) {
         existing.overLimit = existing.overLimit || over;
         if (existing.z < gz - 1) existing.z = gz - 1.2;
       } else {
+        if (cars.current.size >= 30) {
+          // evict the oldest car to make room
+          const oldest = cars.current.keys().next().value;
+          cars.current.delete(oldest);
+        }
         cars.current.set(ev.car_plate, {
           plate: ev.car_plate,
           model: MODELS[h % MODELS.length],

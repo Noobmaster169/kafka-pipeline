@@ -8,24 +8,25 @@ import LiveViolationFeed from "../components/LiveViolationFeed.jsx";
 import { IconArrowRight } from "../components/icons.jsx";
 import "./pages.css";
 import LatestCapture from "../components/LatestCapture.jsx";
+import HighwayStrip from "../components/HighwayStrip.jsx";
 
 export default function Overview() {
   const [lanes, setLanes] = useState(null);
   const [error, setError] = useState(null);
   const { feed, status } = useViolationFeed();
+  const [cameras, setCameras] = useState([]);
 
-useEffect(() => {
-  let alive = true;
-  const loadData = () => {
-    api.listLanes()
-      .then((data) => { if (alive) setLanes(data); })
-      .catch((e) => { if (alive) setLanes((cur) => { if (!cur) setError(e); return cur; }); });
-  };
-
-  loadData();
-  const interval = setInterval(loadData, 5000);
-  return () => { alive = false; clearInterval(interval); };
-}, []);
+  useEffect(() => {
+    let alive = true;
+    const loadData = () => {
+      Promise.all([api.listLanes(), api.listCameras()])
+        .then(([ls, cs]) => { if (alive) { setLanes(ls); setCameras(cs); } })
+        .catch((e) => { if (alive) setLanes((cur) => { if (!cur) setError(e); return cur; }); });
+    };
+    loadData();
+    const interval = setInterval(loadData, 5000);
+    return () => { alive = false; clearInterval(interval); };
+  }, []);
 
   if (error) return <ErrorState error={error} />;
   if (!lanes) return <Spinner label="Loading network" />;
@@ -63,7 +64,7 @@ useEffect(() => {
         <StatCard label="Cameras Online" value={totals.cameras} tone="live" sub={`${lanes.length} lanes`} />
       </div>
 
-<div className="grid-2">
+      <div className="grid-2">
         <div>
           <Panel title="Monitored Lanes" bodyClass="">
             <div className="lane-cards">
@@ -104,7 +105,7 @@ useEffect(() => {
           action={<ConnectionDot status={status} label="STREAMING" />}
           bodyClass="no-pad"
         >
-          <div style={{ maxHeight: 460, overflowY: "auto", margin: -16 }}>
+          <div style={{ maxHeight: 720, overflowY: "auto", margin: -16 }}>
             <LiveViolationFeed
               violations={feed}
               showLane
@@ -113,6 +114,22 @@ useEffect(() => {
           </div>
         </Panel>
       </div>
+
+      <Panel
+        title="Network Highways · 3D"
+        action={<span className="eyebrow">all lanes live</span>}
+        style={{ marginTop: 18 }}
+      >
+        {lanes.map((lane) => (
+          <HighwayStrip
+            key={lane.lane_id}
+            lane={lane}
+            cameras={cameras
+              .filter((c) => c.lane_id === lane.lane_id)
+              .sort((a, b) => a.position_km - b.position_km)}
+          />
+        ))}
+      </Panel>
     </div>
   );
 }
