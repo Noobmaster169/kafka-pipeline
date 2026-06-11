@@ -11,13 +11,13 @@ Assignment 2 delivered a functional average-speed enforcement system in which ro
 events are ingested through Apache Kafka, correlated by Apache Spark Structured Streaming, and
 persisted to MongoDB. While correct on the supplied dataset, the prototype's topology embeds a
 fixed parallelism ceiling, a quadratic growth in hand-written join operators, and a
-correctness defect in violation de-duplication, rendering it unsuitable for the
+non-idempotent persistence model for violations, rendering it unsuitable for the
 national-scale, continuously-running deployment the problem domain implies. This proposal
 specifies a re-architected streaming pipeline built around two research-supported principles:
 (i) a **single Kafka topic partitioned on a high-cardinality key** (`car_plate`) to decouple
 parallelism from the number of cameras, and (ii) a **single generalised stream–stream
-self-join** that subsumes all camera pairs and scales to an arbitrary number of cameras and
-lanes without code change. The redesign is embedded in a reproducible, containerised admin
+self-join** that subsumes all (consecutive) camera pairs and scales to an arbitrary number of
+cameras and lanes without code change. The redesign is embedded in a reproducible, containerised admin
 platform comprising a synthetic traffic simulator, the streaming pipeline, and a real-time
 operations dashboard. We further specify an empirical evaluation of throughput, latency, and
 operator-state growth that demonstrates the removal of the prototype's scaling ceiling.
@@ -83,10 +83,13 @@ advancing bound on event-time completeness that declares when sufficiently old r
 dropped and their state evicted [4], [5]. The watermark/event-time model formalised by the
 Dataflow Model [5] is what makes windowed correlation feasible on an infinite stream with
 **bounded memory**: operator state is approximately `arrival_rate × (window + watermark
-delay)`. Parallel stream-join algorithms in the research literature — notably the handshake
-join [6] and the skew-resilient, deterministic ScaleJoin [7] — establish that windowed joins
-parallelise effectively when work is partitioned by the join key, and characterise the
-key-skew failure mode that our design must consider (§6).
+delay)`. Two parallel stream-join papers frame the design space our join sits in. The
+handshake join [6] distributes the windowed join's tuple-pair comparison space across cores
+*because* arbitrary θ-predicates cannot be key-partitioned — implying that a predicate led by
+a high-cardinality equality (ours: `car_plate`) **can** be, with no such machinery needed.
+ScaleJoin [7] shows that key-partitioned joins load-balance only as well as their key
+distribution (a skewed key hot-spots one thread), which is the criterion by which we select
+the partition key (§4.1) and the skew failure mode our design must consider (§6).
 
 ---
 
@@ -112,11 +115,13 @@ readers, and join operators — the system cannot grow without being rewritten.
 every pair; for unidirectional traffic, roughly half maintain windowed state that can never
 produce output, inflating memory and shuffle cost.
 
-**L4 — A correctness defect in de-duplication.** The final de-duplication keys on `car_plate`
-alone (`spark_pipeline.py:321`) over a ten-minute window, rather than on
-`(car_plate, violation_type)`. A vehicle that commits **both** an instantaneous and an
-average-speed violation therefore has one record silently discarded — a loss of enforcement
-evidence contradicting the stated design intent.
+**L4 — A non-idempotent persistence model.** A2 stores violations as **one document per
+`(car_plate, date)`** with a `$push` array (`spark_pipeline.py`), so a day's distinct
+violations are conflated into a single array and reprocessing a micro-batch re-pushes the same
+events. This both complicates per-violation querying, filtering and export, and makes the write
+path non-idempotent — a vehicle's record cannot be reconciled cleanly after a restart. (The
+de-duplication itself, keyed on `car_plate` over a window, is the *correct* enforcement grain —
+one flag per car per window — and is retained in A3; see §4.4.)
 
 A secondary observation is that A2's feeder pre-sorts events into global time order, so the
 watermark and late-data machinery — the crux of correct stream-join semantics [5] — is never
@@ -142,7 +147,9 @@ partitioning semantics [1]:
   records distribute evenly across partitions; co-location of a vehicle's events on one
   partition additionally preserves per-vehicle event ordering, which the join relies upon.
   Keying on `camera_id` (cardinality three) would reproduce the A2 ceiling and induce hot
-  partitions — the skew failure mode characterised by the parallel-join literature [6], [7].
+  partitions — exactly the key-skew failure mode for which ScaleJoin [7] abandons key-based
+  placement in favour of key-free round-robin distribution. The high-cardinality key keeps the
+  partitioned join inside the safe regime that analysis defines.
 
 ### 4.2 D2 — A single generalised stream–stream self-join
 
@@ -168,7 +175,7 @@ buffered state [4]. Listing 1 gives the core code.
 events = (
     spark.readStream.format("kafka").option("subscribe", "camera-events").load()
         .select(from_json(col("value").cast("string"), EVENT_SCHEMA).alias("e"))
-        .select("e.*")                                   # car_plate, lane_id, camera_id,
+        .select("e.*")                                   # car_plate, lane_id, camera_id, camera_index,
                                                          # position_km, speed_limit, speed_reading, timestamp
         .withColumn("event_time", to_timestamp("timestamp"))
         .withWatermark("event_time", "10 minutes")       # late bound; enables state cleanup
@@ -184,7 +191,7 @@ paired = a.join(
     on=expr("""
         a.car_plate  =  b.car_plate                       AND   -- (i)   same vehicle
         a.lane_id    =  b.lane_id                         AND   -- (ii)  same lane
-        a.camera_id  <> b.camera_id                       AND   -- (iii) two DIFFERENT cameras
+        abs(b.camera_index - a.camera_index) = 1          AND   -- (iii) ADJACENT cameras only
         b.event_time >  a.event_time                      AND   -- (iv)  b is the later crossing
         b.event_time <= a.event_time + interval 10 minutes      -- (v)   within the journey window
     """),
@@ -216,14 +223,29 @@ violations_avg = segments.where(col("avg_speed") > col("speed_limit"))
 |---|---|---|
 | (i) | `a.car_plate = b.car_plate` | The join key. Only detections of the **same vehicle** can form a journey; co-located on one Kafka partition by §4.1, so matching is local. |
 | (ii) | `a.lane_id = b.lane_id` | A segment exists only **within one lane**; cross-lane pairs are physically meaningless and are excluded. |
-| (iii) | `a.camera_id <> b.camera_id` | A detection cannot form a segment **with itself**; the two endpoints must be **distinct cameras**. |
-| (iv) | `b.event_time > a.event_time` | Forces `b` to be the **later** crossing, so `a` is unambiguously the segment **start**. Critically, this also makes each unordered camera pair produce **exactly one** row, not two mirror-image rows — there is no `(b before a)` duplicate because it would violate this clause. Physical direction is irrelevant: distance is `|position_b − position_a|`, valid either way. |
+| (iii) | `abs(b.camera_index − a.camera_index) = 1` | The two endpoints must be **adjacent cameras** on the lane. `camera_index` is each camera's ordinal along the road (source-enriched, D3). Pairing only neighbours computes the average over **consecutive segments** (X-1 → X) and never across a skipped camera (X-2), reducing per-vehicle output from `O(k²)` to `O(k)`. The `|Δindex| = 1` form (rather than `index+1`) keeps **both travel directions**; clause (iv) then fixes which endpoint is the start. |
+| (iv) | `b.event_time > a.event_time` | Forces `b` to be the **later** crossing, so `a` is unambiguously the segment **start**. Combined with (iii) this makes each adjacent camera pair produce **exactly one** row, not two mirror-image rows — there is no `(b before a)` duplicate because it would violate this clause. Physical direction is irrelevant: distance is `|position_b − position_a|`, valid either way. |
 | (v) | `b.event_time <= a.event_time + 10 min` | The **journey window**: two detections more than ten minutes apart are not one trip. This is also the bound Spark uses, together with the watermark, to **evict join state** (§4.2.4). |
 
-A single operator with these five clauses therefore subsumes **every camera pair, in both travel
-directions, for any number of cameras and lanes** — resolving **L2** (no per-pair code) and
-**L3** (no wasted reverse-direction joins). This is the key-partitioned single-join principle of
-the parallel stream-join literature [6], [7], applied to our domain.
+A single operator with these five clauses therefore subsumes **every adjacent camera pair, in
+both travel directions, for any number of cameras and lanes** — resolving **L2** (no per-pair
+code) and **L3** (no wasted reverse-direction joins). The predicate is deliberately *led by a
+high-cardinality equality* (clause i): the handshake join [6] exists because general
+θ-predicates cannot be key-partitioned, so keeping our join equi-keyed is what licenses the
+simple key-partitioned execution — the literature's applicability boundary used as a design
+rule.
+
+Restricting clause (iii) to *adjacent* cameras (`|Δindex| = 1`) rather than any distinct pair
+(`camera_id <> camera_id`) is a deliberate refinement: average-speed enforcement is intrinsically
+a **consecutive-segment** computation, so a vehicle that passes `k` cameras need only be checked
+on its `k−1` adjacent segments, not all `O(k²)` pairs. A non-adjacent pair such as `(cam1, cam3)`
+adds no enforcement power — if a driver speeds across `(1,3)` with a constant between-camera speed,
+the adjacent segments `(1,2)` and `(2,3)` already exceed the limit and flag. The only case it
+forgoes is a **missed** camera reading (`cam1` then `cam3` with no `cam2` event), which the
+all-pairs form would still bridge; the ideal remedy — holding each vehicle's *last* crossing in
+operator state via `applyInPandasWithState` for `O(active vehicles)` rather than `O(events ×
+window)` memory — requires Spark ≥ 3.4 and is noted as future work (§6) under the unit's Spark 3.3
+runtime.
 
 #### 4.2.3 Worked example — catching a "sneaky" driver
 
@@ -241,24 +263,26 @@ each with a 90 km/h limit. The driver brakes hard *at* each camera but accelerat
 is exactly the evasion average-speed enforcement exists to defeat.
 
 **The self-join** emits one row per qualifying `(a, b)` pair. With three crossings of the same
-plate on the same lane within the window, clauses (i)–(v) yield three rows:
+plate on the same lane within the window, clauses (i)–(v) — pairing only **adjacent** cameras —
+yield two rows:
 
 | `a.cam` | `b.cam` | `dt_seconds` | `distance_km` | `avg_speed = dist·3600/dt` |
 |---|---|---|---|---|
 | 1 | 2 | 30 | 1.0 | **120.0 km/h** |
-| 1 | 3 | 60 | 2.0 | **120.0 km/h** |
 | 2 | 3 | 30 | 1.0 | **120.0 km/h** |
 
-(The reverse pairs — e.g. `a.cam=2, b.cam=1` — never appear, because clause (iv) requires the
-`b` crossing to be later in time.) Every row's `avg_speed` (120) exceeds the 90 limit, so clause
-(5) flags all three as AVERAGE candidates. Downstream de-duplication on
-`(car_plate, violation_type)` (D4) then collapses them to **one** recorded AVERAGE violation for
-`SNK 1`. The driver is caught despite never exceeding the limit at any camera.
+(The non-adjacent pair `(cam1, cam3)` is **not** emitted — clause (iii) requires
+`|Δcamera_index| = 1` — and the reverse pairs such as `a.cam=2, b.cam=1` never appear because
+clause (iv) requires the `b` crossing to be later in time.) Both rows' `avg_speed` (120) exceed
+the 90 limit, so clause (5) flags both as AVERAGE candidates. Downstream de-duplication on
+`car_plate` (one flag per car per window, D4) then collapses them to **one** recorded AVERAGE
+violation for `SNK 1`. The driver is caught despite never exceeding the limit at any camera — and
+with `k−1 = 2` segment checks rather than the `O(k²) = 3` of an all-pairs join.
 
 **Runtime extensibility, concretely.** If an administrator adds a fourth camera D at 4.0 km
-(§4.3), `SNK 1`'s later trips simply produce a fourth crossing; the *same* join in Listing 1
-then additionally yields pairs `(1,4), (2,4), (3,4)` with **no code change and no restart**. By
-contrast, A2 would require three new hand-written joins.
+(§4.3), `SNK 1`'s later trips simply produce a fourth crossing (`camera_index = 3`); the *same*
+join in Listing 1 then additionally yields the one **adjacent** pair `(3, 4)` with **no code
+change and no restart**. By contrast, A2 would require new hand-written joins.
 
 #### 4.2.4 How the join's memory stays bounded
 
@@ -281,13 +305,17 @@ Spark. A consequential operational benefit is that **cameras may be added at run
 cameras simply begin emitting enriched events — with **no pipeline restart and no code change**,
 a property directly exercised by the admin platform's camera-management feature.
 
-### 4.4 D4 — Corrected de-duplication and one-document-per-violation persistence
+### 4.4 D4 — Idempotent one-document-per-violation persistence
 
-De-duplication is re-keyed on `(car_plate, violation_type)` with an explicit watermark window,
-preserving distinct violations of different types for the same vehicle (resolves **L4**).
-Violations are persisted as **one document per violation**, with an idempotent unique key
-`(car_plate, violation_type, timestamp_start, camera_id_start)` to tolerate pipeline restarts,
-simplifying downstream querying, filtering, and export for the operations dashboard.
+The enforcement requirement is to **flag each vehicle once per detection window**, irrespective
+of how many cameras or segments fired, or of the violation type. De-duplication therefore keys on
+`car_plate` over an explicit watermark window (`dropDuplicates(["car_plate"])`) — the correct
+enforcement grain, carried over from A2. The contribution of D4 is the **persistence model**: in
+place of A2's `(car_plate, date)` `$push` array (L4), each flag is written as **its own document**
+and upserted on the idempotent unique key `(car_plate, window_start)`, where `window_start` is the
+start time floored to the dedup window. A replayed micro-batch upserts onto the same document
+rather than inserting a duplicate — tolerating pipeline restarts — and the per-violation document
+simplifies downstream querying, filtering, and export for the operations dashboard.
 
 ### 4.5 State bounding
 
@@ -322,24 +350,33 @@ static substitutes, consistent with the assignment's reproducibility requirement
 
 - **Key skew.** Partitioning on `car_plate` exchanges A2's structural camera-skew for a
   potential, rare per-plate skew (a small number of hyperactive plates). At the cardinality of
-  a real plate population this is negligible; the worst case is precisely what skew-resilient
-  join algorithms such as ScaleJoin [7] address, and is acknowledged as a bounded risk.
+  a real plate population this is negligible; the worst case is precisely what ScaleJoin's [7]
+  key-free round-robin tuple distribution addresses, and is acknowledged as a bounded risk.
 - **Micro-batch latency.** Structured Streaming's micro-batch model introduces seconds-scale
   detection latency [3], acceptable for an enforcement-review use case but not for hard
   real-time control.
 - **Single-node demonstration.** Evaluation runs on a single host (`local[*]`); scalability is
   demonstrated through partition/core sweeps and argued by extrapolation to a multi-node
   cluster, consistent with the cloud-simulated deployment option in the specification.
+- **Join state vs. arbitrary stateful processing.** The consecutive-segment self-join (§4.2.2)
+  bounds *output* to `O(k)` per vehicle, but its *state* is still the stream-join buffer of every
+  event for the watermark window — `O(arrival_rate × window)`. The asymptotically stronger design
+  keeps only each vehicle's **last crossing per lane** in keyed state via `applyInPandasWithState`,
+  reducing state to `O(active vehicles)` and matching consecutive crossings directly (also closing
+  the missed-camera gap of clause (iii)). That API requires **Spark ≥ 3.4**; the unit runtime is
+  the `fit3182/pyspark` **3.3** image, where PySpark exposes no arbitrary-stateful operator
+  (`flatMapGroupsWithState` is JVM-only), so it is documented as the primary future-work upgrade
+  rather than implemented.
 
 ---
 
 ## 7. Conclusion
 
 The Assignment 2 prototype validated the average-speed detection concept but encoded a
-parallelism ceiling, a quadratic and recompilation-bound join topology, and a violation-loss
-defect. The proposed architecture removes these through a single high-cardinality-partitioned
+parallelism ceiling, a quadratic and recompilation-bound join topology, and a non-idempotent
+persistence model. The proposed architecture removes these through a single high-cardinality-partitioned
 topic, one generalised key-partitioned self-join, source-side enrichment for a config-free and
-runtime-extensible pipeline, and corrected, idempotent persistence — each decision supported by
+runtime-extensible pipeline, and idempotent one-document-per-violation persistence — each decision supported by
 the partitioned-log, structured-streaming, and parallel-stream-join literature. Embedded in a
 reproducible containerised admin platform and accompanied by an empirical scalability
 evaluation, the redesign advances the prototype toward a production-shaped, operationally
