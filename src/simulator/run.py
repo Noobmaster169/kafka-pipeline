@@ -276,7 +276,10 @@ def run_csv(args, producer, db) -> None:
     # Use the per-lane loader so each camera carries its camera_index (the join needs it).
     cams = {int(c["camera_id"]): c
             for lane_cams in load_cameras_by_lane(db).values() for c in lane_cams}
-    data_dir = Path(__file__).resolve().parents[3] / "data"
+    # Bundled data lives in the project's own data/ dir (project root, two levels up from
+    # src/simulator/). The large A2 camera_event_*.csv are NOT bundled — drop them into data/
+    # or point --data-dir at a folder that has them.
+    data_dir = Path(args.data_dir) if args.data_dir else Path(__file__).resolve().parents[2] / "data"
     frames = []
     for letter in ("A", "B", "C"):
         path = data_dir / f"camera_event_{letter}.csv"
@@ -338,6 +341,9 @@ def parse_args() -> argparse.Namespace:
                    help="Seconds between camera-config refreshes (hot-add support).")
     p.add_argument("--scale", type=float, default=10.0,
                    help="CSV mode: wall-seconds per CSV-minute.")
+    p.add_argument("--data-dir", type=Path, default=None,
+                   help="CSV mode: folder holding the A2 camera_event_*.csv "
+                        "(default: <project>/data; the large replay CSVs are not bundled).")
     p.add_argument("--normal", type=float, default=0.7)
     p.add_argument("--speeder", type=float, default=0.2)
     p.add_argument("--sneaky", type=float, default=0.1)

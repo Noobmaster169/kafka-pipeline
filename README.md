@@ -15,9 +15,11 @@ This single README is both the **run book** (how to reproduce the system) and th
 34328041_34423680_assignment03/
 ├── README.md                 # this document — run book + report
 ├── slides.pdf                # presentation deck for the project
+├── video.mp4                 # presentation video for the project
 ├── articles/                 # bundled reference papers
 │   └── scale-join.pdf        #   ScaleJoin [7] — the core stream-join paper behind theme (c)
 ├── assets/                   # diagrams + dashboard screenshots used in this README
+├── data/                     # bundled source data: vehicle.csv (car pool) + camera.csv
 ├── src/
 │   ├── common/               # shared config, event schema, Mongo + Kafka helpers, logging
 │   ├── seed_db.py            # seed 3 lanes, 3 cameras/lane, cars from vehicle.csv
@@ -290,7 +292,10 @@ deployment/scripts/stack.sh sim --rate 2 --total 200                 # 2 trips/s
 deployment/scripts/stack.sh sim --normal 0.5 --speeder 0.3 --sneaky 0.2  # custom behaviour mix
 deployment/scripts/stack.sh sim --fast --total 100000                # load test: emit as fast as possible
 deployment/scripts/stack.sh sim --source csv --scale 5               # replay the A2 camera_event_*.csv files
+deployment/scripts/stack.sh sim --source csv --data-dir /path/to/csv # …from a custom folder
 ```
+
+> The default synthetic mode needs only the bundled `data/vehicle.csv`. The optional `--source csv` replay mode reads the large A2 `camera_event_A/B/C.csv` files, which are **not bundled** (≈140 MB); place them in the project's `data/` folder or point `--data-dir` at a folder that has them.
 
 > Run the simulator **inside the stack** (as `stack.sh sim` does): a host shell can't resolve the `kafka` hostname the broker advertises, so a host-run producer connects but its events never arrive. To run on the host, make `kafka`/`mongo` resolvable or override `KAFKA_BOOTSTRAP_SERVERS`/`MONGO_HOST`.
 

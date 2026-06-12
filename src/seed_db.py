@@ -43,8 +43,8 @@ LANE_CAMERA_PLAN = {
     3: {"count": 3, "limit": 80.0},
 }
 
-# data/vehicle.csv lives two levels up from src/ (repo root / data).
-DEFAULT_VEHICLE_CSV = Path(__file__).resolve().parents[2] / "data" / "vehicle.csv"
+# data/vehicle.csv is bundled inside the project (project root / data), one level up from src/.
+DEFAULT_VEHICLE_CSV = Path(__file__).resolve().parents[1] / "data" / "vehicle.csv"
 
 
 def build_cameras() -> list[dict]:
