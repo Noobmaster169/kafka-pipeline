@@ -7,16 +7,34 @@
 
 AWAS is an **admin operations console** for an average-speed enforcement network: a live React dashboard, backed by a FastAPI service, sitting on top of a Kafka → Spark Structured Streaming → MongoDB pipeline carried over and extended from Assignment 2. An operator uses it to watch each monitored lane in real time, manage the camera and vehicle registries, and investigate and export recorded violations.
 
-This single README is both the **run book** (how to reproduce the system) and the **report** (what each part does, the design decisions, and the measured results). Companion artifacts:
+This single README is both the **run book** (how to reproduce the system) and the **report** (what each part does, the design decisions, and the measured results).
 
-| Artifact | What it is |
-|---|---|
-| [`A3_PROPOSAL.md`](A3_PROPOSAL.md) | The academic proposal — architecture and its research-backed justification. |
-| [`SLIDES.md`](SLIDES.md) | Compacted slide deck (one slide per `---` block; convert to PDF/PPTX). |
-| [`benchmarks/`](benchmarks/) | The runnable performance harness + the CSV/PNG results reproduced in [§9](#9-performance). |
-| [`src/`](src/) · [`frontend/`](frontend/) · [`deployment/`](deployment/) | Backend + pipeline source, the dashboard, and the Docker stack + scripts. |
+### Project layout
 
-> **Generative AI declaration.** We used Claude (Anthropic) as a support aid for research framing, code review, documentation drafting, and debugging. Prompt summary: *"build a real-time operations dashboard over the Kafka + Spark enforcement pipeline, refine the stream-join to consecutive camera segments, and produce the documentation and a performance harness."* We reviewed, tested, and verified all submitted work and remain accountable for its correctness.
+```
+34328041_34423680_assignment03/
+├── README.md                 # this document — run book + report
+├── slides.pdf                # presentation deck for the project
+├── articles/                 # bundled reference papers
+│   └── scale-join.pdf        #   ScaleJoin [7] — the core stream-join paper behind theme (c)
+├── assets/                   # diagrams + dashboard screenshots used in this README
+├── src/
+│   ├── common/               # shared config, event schema, Mongo + Kafka helpers, logging
+│   ├── seed_db.py            # seed 3 lanes, 3 cameras/lane, cars from vehicle.csv
+│   ├── simulator/            # traffic generator (normal/speeder/sneaky): behaviors.py + run.py
+│   ├── pipeline/             # Spark job: detect.py (self-join), sink.py (Mongo+Kafka),
+│   │                         #            run.py (session+query), verify_detect.py (offline test)
+│   └── backend/              # FastAPI: db, serialize, models, live (Kafka→WS), routers, main, run
+├── frontend/                 # React + Vite operations dashboard (lib · components · pages)
+├── deployment/
+│   ├── config/docker-compose.yml   # zookeeper + kafka + mongo + spark on kafka-net
+│   ├── Dockerfile                  # baked Spark image (fit3182/pyspark + A3 deps)
+│   └── scripts/stack.sh            # single entry point: up/down/seed/topics/verify/joincmp/pipeline/sim
+├── benchmarks/               # performance harness: run_benchmark.py, join_compare.py, latency_dist.py + results
+└── requirements.txt          # Python deps (backend / simulator / pipeline / seeding)
+```
+
+> **Generative AI declaration.** We used Claude (Anthropic) as a support aid for coding sessions, documentation drafting, and debugging. We reviewed, tested, and verified all submitted work and remain accountable for its correctness.
 
 ---
 
@@ -32,8 +50,7 @@ This single README is both the **run book** (how to reproduce the system) and th
 8. [Running it — deployment and reproducibility](#8-running-it--deployment-and-reproducibility)
 9. [Performance](#9-performance)
 10. [Limitations and alternative designs](#10-limitations-and-alternative-designs)
-11. [Project structure](#11-project-structure)
-12. [References](#references)
+11. [References](#references)
 
 ---
 
@@ -79,7 +96,9 @@ The landing view (`/`) rolls the whole network up into a status board: four KPI 
 
 *Operator value:* one screen answers "is the network healthy, where are violations concentrated, and is anything happening right now."
 
-![Dashboard overview — image in /assets, might not load in zip display](assets/dashboard-overview.png)
+![Dashboard overview — image in /assets, might not load in zip display](assets/dashboard.png)
+
+![Dashboard overview 2 — image in /assets, might not load in zip display](assets/dashboard_part2.png)
 
 ### 3.2 Live lane dashboard — the hero view
 
@@ -87,7 +106,9 @@ The lane view (`/lanes/{id}`) is the centrepiece: a hand-built animated schemati
 
 *Operator value:* this is where evasion becomes visible. A "sneaky" driver shows as a dot that stays green at every gantry yet is flagged AVERAGE between them — the operator literally watches the behaviour the average-speed system exists to catch.
 
-![Live lane dashboard — image in /assets, might not load in zip display](assets/lane-live.png)
+![Live lane dashboard — image in /assets, might not load in zip display](assets/lane1.png)
+
+![Live lane dashboard 2 — image in /assets, might not load in zip display](assets/lane1_part2.png)
 
 ### 3.3 Camera management
 
@@ -103,7 +124,7 @@ The vehicles view (`/cars`) is a searchable, paginated registry: type a plate pr
 
 *Operator value:* the per-vehicle investigation workflow — look up a plate, see who owns it and every time it has been flagged.
 
-![Vehicle registry — image in /assets, might not load in zip display](assets/vehicles.png)
+![Vehicle registry — image in /assets, might not load in zip display](assets/vehicle.png)
 
 ### 3.5 Violation tracking
 
@@ -111,7 +132,7 @@ The violations view (`/violations`) is the enforcement ledger: a filterable, pag
 
 *Operator value:* the reporting and evidence workflow — slice the record any way needed and export it for downstream processing or prosecution.
 
-![Violation tracking — image in /assets, might not load in zip display](assets/violations.png)
+![Violation tracking — image in /assets, might not load in zip display](assets/export.png)
 
 ### 3.6 How it is built
 
@@ -321,6 +342,16 @@ Both strategies detect the exact same violations (asserted by `verify_detect.py`
 
 The single host sustains **≈ 5,900 ev/s (~21 M crossings/hour)** while detecting ~4,700 violations per run — a measured capacity-planning baseline. The curve is **flat** across 1 → 6 partitions (8.5% spread, inside the noise band), which is the *correct* result: a partition is the unit of *consumer* parallelism, not added compute, and on one host every consumer shares the same `local[*]` cores, so the pipeline is CPU-bound, not partition-bound. The sweep nonetheless validates the structural claim — four topologies from one environment variable and zero code changes, something A2 could not express at all. Realising the speed-up needs a partition per machine (the multi-node deployment of [§10](#10-limitations-and-alternative-designs)). Full rows in [`benchmarks/results.csv`](benchmarks/results.csv).
 
+**Experiment 3 — end-to-end detection latency** (live-rate streaming, `sim --rate 3`, `adjacent` strategy). Latency is `detected_at − timestamp_end`: the wall-clock time from a vehicle completing a segment (its end-camera crossing) to the violation being persisted and pushed to the dashboard's live feed. It is measured under *live-rate* streaming because the Experiment 2 fast-mode runs carry synthetic event times (flagged `latency_reliable = no`); here [`benchmarks/latency_dist.py`](benchmarks/latency_dist.py) reads every per-violation latency straight from MongoDB over `n = 167` violations.
+
+![Histogram of end-to-end detection latency under live-rate streaming: a single tight mode around 1.2 s, p50 1.24 s and p95 1.81 s marked, longest tail at 2.11 s.](benchmarks/latency_live-rate3Q.png)
+
+| min | p50 (median) | mean | p95 | p99 | max |
+|---|---|---|---|---|---|
+| 0.61 s | 1.24 s | 1.27 s | 1.81 s | 1.91 s | 2.11 s |
+
+The distribution is **tight and single-moded** (stdev ≈ 0.31 s): every one of the 167 violations surfaced within **2.2 s** of the car completing the segment, with the median at **1.24 s**. This is micro-batch latency — the Spark trigger interval plus the window/watermark mechanics, not the join algorithm — and it sets the operational envelope: a violation appears on the operator's live feed a second or two after it physically happens, which is well inside "real-time operations" needs but not hard-real-time control ([§10](#10-limitations-and-alternative-designs)). Raw values in [`benchmarks/latency_live-rate3Q.csv`](benchmarks/latency_live-rate3Q.csv).
+
 ---
 
 ## 10. Limitations and alternative designs
@@ -328,7 +359,7 @@ The single host sustains **≈ 5,900 ev/s (~21 M crossings/hour)** while detecti
 ### 10.1 Known limitations
 
 - **Single-node demonstration.** Evaluation runs on one host (`local[*]`); throughput is CPU-bound at ≈5,900 ev/s regardless of partition count (§9). The partition knob is demonstrated as *operable*; its speed-up is realised only on a multi-node cluster.
-- **Micro-batch latency.** Structured Streaming adds seconds-scale latency [[3]](#ref-3) — fine for enforcement review, not for hard real-time control.
+- **Micro-batch latency.** Structured Streaming's micro-batch model adds seconds-scale latency [[3]](#ref-3) — measured at a 1.24 s median / 2.11 s max end-to-end (§9, Experiment 3) — fine for enforcement review and a live operations feed, not for hard real-time control.
 - **Missed-camera gap.** The adjacent-only join ([§6.3](#63-the-consecutive-segment-refinement)) does not bridge a skipped camera (a `cam1 → cam3` crossing with no `cam2` reading).
 - **Key skew.** Partitioning on `car_plate` trades A2's structural camera-skew for a rare per-plate skew; the remedy if it ever materialised is ScaleJoin's [[7]](#ref-7) key-free round-robin distribution.
 - **Old-broker constraints.** The 0.10.x image forces the CLI partition path and rules out MongoDB change streams (standalone image), which is why live updates ride a Kafka `violations` topic.
@@ -346,31 +377,6 @@ The `O(k²) → O(k)` reduction is engine-independent and would carry over to an
 
 ---
 
-## 11. Project structure
-
-```
-34328041_34423680_assignment03/
-├── A3_PROPOSAL.md            # academic proposal (architecture + references)
-├── SLIDES.md                 # compacted slide deck
-├── requirements.txt          # Python deps (backend / simulator / pipeline / seeding)
-├── src/
-│   ├── common/               # shared config, event schema, Mongo + Kafka helpers, logging
-│   ├── seed_db.py            # seed 3 lanes, 3 cameras/lane, cars from vehicle.csv
-│   ├── simulator/            # traffic generator (normal/speeder/sneaky): behaviors.py + run.py
-│   ├── pipeline/             # Spark job: detect.py (self-join), sink.py (Mongo+Kafka),
-│   │                         #            run.py (session+query), verify_detect.py (offline test)
-│   └── backend/              # FastAPI: db, serialize, models, live (Kafka→WS), routers, main, run
-├── frontend/                 # React + Vite operations dashboard
-│   └── src/                  #   lib (api/socket/format), components (shell/lane/feed/UI), pages
-├── deployment/
-│   ├── config/docker-compose.yml   # zookeeper + kafka + mongo + spark on kafka-net
-│   ├── Dockerfile                  # baked Spark image (fit3182/pyspark + A3 deps)
-│   └── scripts/stack.sh            # single entry point: up/down/seed/topics/verify/joincmp/pipeline/sim
-└── benchmarks/               # performance harness: run_benchmark.py, join_compare.py, results + plots
-```
-
----
-
 ## References
 
 <a id="ref-1"></a>[1] J. Kreps, N. Narkhede, and J. Rao, "Kafka: a Distributed Messaging System for Log Processing," in *Proc. NetDB*, 2011. [[PDF]](https://notes.stephenholiday.com/Kafka.pdf)
@@ -385,7 +391,7 @@ The `O(k²) → O(k)` reduction is engine-independent and would carry over to an
 
 <a id="ref-6"></a>[6] J. Teubner and R. Mueller, "How Soccer Players Would Do Stream Joins," in *Proc. ACM SIGMOD*, 2011. [[doi]](https://doi.org/10.1145/1989323.1989389)
 
-<a id="ref-7"></a>[7] V. Gulisano, Y. Nikolakopoulos, M. Papatriantafilou, and P. Tsigas, "ScaleJoin: A Deterministic, Disjoint-Parallel and Skew-Resilient Stream Join," *IEEE Transactions on Big Data*, 2016. [[doi]](https://doi.org/10.1109/TBDATA.2016.2624274)
+<a id="ref-7"></a>[7] V. Gulisano, Y. Nikolakopoulos, M. Papatriantafilou, and P. Tsigas, "ScaleJoin: A Deterministic, Disjoint-Parallel and Skew-Resilient Stream Join," *IEEE Transactions on Big Data*, 2016. [[doi]](https://doi.org/10.1109/TBDATA.2016.2624274) · [[bundled PDF]](articles/scale-join.pdf)
 
 <a id="ref-8"></a>[8] J. Kang, J. F. Naughton, and S. D. Viglas, "Evaluating Window Joins over Unbounded Streams," in *Proc. IEEE ICDE*, 2003. [[doi]](https://doi.org/10.1109/ICDE.2003.1260804)
 
